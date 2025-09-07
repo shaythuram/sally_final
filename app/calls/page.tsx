@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import Link from "next/link"
+import { Sidebar } from "@/components/sidebar"
 
 // Extended mock data for calls page
 const mockCallsData = {
@@ -188,74 +188,58 @@ export default function CallsPage() {
   )
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">S</span>
+    <Sidebar>
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200">
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">S</span>
+                  </div>
+                  <h1 className="text-xl font-semibold">Sally</h1>
                 </div>
-                <h1 className="text-xl font-semibold">Sally</h1>
               </div>
-              <nav className="text-sm text-muted-foreground flex items-center gap-4">
-                <Link href="/dashboard" className="hover:text-foreground transition-colors">
-                  Dashboard
-                </Link>
-                <Link href="/calls" className="hover:text-foreground transition-colors">
-                  Calls
-                </Link>
-                <Link href="/files" className="hover:text-foreground transition-colors">
-                  Files
-                </Link>
-              </nav>
-            </div>
 
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search calls, accounts, stages..."
-                  className="pl-10 w-80 bg-white border-gray-200"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search calls, accounts, stages..."
+                    className="pl-10 w-80 bg-white border-gray-200"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <Button variant="outline" size="sm" className="bg-white border-gray-200">
+                  <Filter className="h-4 w-4 mr-2" />
+                  Filters
+                </Button>
+                <Button variant="ghost" size="sm">
+                  <Bell className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm">
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src="/placeholder-user.jpg" />
+                  <AvatarFallback>AK</AvatarFallback>
+                </Avatar>
               </div>
-              <Button variant="outline" size="sm" className="bg-white border-gray-200">
-                <Filter className="h-4 w-4 mr-2" />
-                Filters
-              </Button>
-              <Button variant="ghost" size="sm">
-                <Bell className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm">
-                <HelpCircle className="h-4 w-4" />
-              </Button>
-              <Avatar className="h-8 w-8">
-                <AvatarImage src="/placeholder-user.jpg" />
-                <AvatarFallback>AK</AvatarFallback>
-              </Avatar>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="container mx-auto px-4 py-6">
-        {/* Page Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold">All Calls</h1>
-            <p className="text-muted-foreground">Manage and review your sales calls</p>
+        <div className="px-6 py-6">
+          {/* Page Header */}
+          <div className="flex items-center gap-4 mb-6">
+            <div>
+              <h1 className="text-2xl font-bold">All Calls</h1>
+              <p className="text-muted-foreground">Manage and review your sales calls</p>
+            </div>
           </div>
-        </div>
 
         {/* Calls Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -404,7 +388,8 @@ export default function CallsPage() {
             )}
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </Sidebar>
   )
 }

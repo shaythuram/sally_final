@@ -38,6 +38,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Textarea } from "@/components/ui/textarea"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
+import { Sidebar } from "@/components/sidebar"
 import Link from "next/link"
 
 const callsData = [
@@ -1441,7 +1442,8 @@ Best regards,`,
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <Sidebar>
+      <div className="min-h-screen bg-white">
       {/* Header - Keep existing search functionality */}
       <header className="sticky top-0 z-50 border-b border-border/20 bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
@@ -3740,6 +3742,7 @@ Best regards,`,
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </Sidebar>
   )
 }

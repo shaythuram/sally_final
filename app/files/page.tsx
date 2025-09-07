@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import Link from "next/link"
+import { Sidebar } from "@/components/sidebar"
 
 // Mock data for files and folders
 const mockFolders = [
@@ -149,94 +149,84 @@ export default function FilesPage() {
   const currentFolderData = folders.find((f) => f.id === currentFolder)
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-white/80 backdrop-blur-sm">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">S</span>
-                </div>
-                <h1 className="text-xl font-semibold">Sally</h1>
-              </div>
-              <nav className="text-sm text-muted-foreground flex items-center gap-4">
-                <Link href="/dashboard" className="hover:text-foreground transition-colors">
-                  Dashboard
-                </Link>
-                <Link href="/calls" className="hover:text-foreground transition-colors">
-                  Calls
-                </Link>
-                <Link href="/files" className="hover:text-foreground transition-colors">
-                  Files
-                </Link>
-              </nav>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search files and folders..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 w-80"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={viewMode === "grid" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setViewMode("grid")}
-                >
-                  <Grid3X3 className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={viewMode === "list" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setViewMode("list")}
-                >
-                  <List className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
-                <DialogTrigger asChild>
-                  <Button className="bg-gray-900 hover:bg-gray-800">
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Folder
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create New Folder</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <Input
-                      placeholder="Folder name"
-                      value={newFolderName}
-                      onChange={(e) => setNewFolderName(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && createFolder()}
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setIsCreateFolderOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button onClick={createFolder} disabled={!newFolderName.trim()}>
-                        Create Folder
-                      </Button>
-                    </div>
+    <Sidebar>
+      <div className="min-h-screen bg-white">
+        {/* Header */}
+        <header className="sticky top-0 z-50 border-b bg-white/80 backdrop-blur-sm">
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">S</span>
                   </div>
-                </DialogContent>
-              </Dialog>
+                  <h1 className="text-xl font-semibold">Sally</h1>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search files and folders..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 w-80"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant={viewMode === "grid" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setViewMode("grid")}
+                  >
+                    <Grid3X3 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === "list" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setViewMode("list")}
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="bg-gray-900 hover:bg-gray-800">
+                      <Plus className="h-4 w-4 mr-2" />
+                      New Folder
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create New Folder</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <Input
+                        placeholder="Folder name"
+                        value={newFolderName}
+                        onChange={(e) => setNewFolderName(e.target.value)}
+                        onKeyPress={(e) => e.key === "Enter" && createFolder()}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setIsCreateFolderOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={createFolder} disabled={!newFolderName.trim()}>
+                          Create Folder
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="container mx-auto px-6 py-8">
+        <div className="px-6 py-8">
         {/* Back button when in folder */}
         {currentFolder && (
           <Button variant="ghost" onClick={() => setCurrentFolder(null)} className="mb-6">
@@ -353,7 +343,8 @@ export default function FilesPage() {
             </div>
           )}
         </div>
+        </div>
       </div>
-    </div>
+    </Sidebar>
   )
 }
