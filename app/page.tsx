@@ -95,7 +95,7 @@ const callsData = [
     aiSummary:
       "Successful demo of AI-WOP platform to Dell operations team. Key discussion points included latency benchmarks,...",
     owner: "Akshith",
-    ownerAvatar: "/professional-man.png",
+    ownerAvatar: "/placeholder-user.jpg",
     labels: [
       { text: "Dell", color: "blue" },
       { text: "Technical", color: "purple" },
@@ -127,7 +127,7 @@ const callsData = [
     aiSummary:
       "Comprehensive security assessment conducted with Kyndryl team. Discussed data encryption, access controls, and...",
     owner: "Maria",
-    ownerAvatar: "/professional-woman-diverse.png",
+    ownerAvatar: "/placeholder-user.jpg",
     labels: [
       { text: "Kyndryl", color: "green" },
       { text: "Security", color: "red" },
@@ -157,7 +157,7 @@ const callsData = [
     pendingTasks: 0,
     aiSummary: "Excellent pilot results presentation to Acme Robotics leadership. Demonstrated 40% efficiency...",
     owner: "David",
-    ownerAvatar: "/professional-man.png",
+    ownerAvatar: "/placeholder-user.jpg",
     labels: [
       { text: "Acme Robotics", color: "purple" },
       { text: "Pilot", color: "green" },
@@ -186,7 +186,7 @@ const callsData = [
     pendingTasks: 3,
     aiSummary: "In-depth technical discussion covering architecture, scalability, and integration requirements...",
     owner: "Sarah",
-    ownerAvatar: "/professional-woman-diverse.png",
+    ownerAvatar: "/placeholder-user.jpg",
     labels: [
       { text: "Globex Corp", color: "gray" },
       { text: "Technical", color: "purple" },
@@ -218,7 +218,7 @@ const callsData = [
     aiSummary:
       "Comprehensive quarterly review covering performance metrics, strategic initiatives, and future roadmap...",
     owner: "Michael",
-    ownerAvatar: "/professional-man.png",
+    ownerAvatar: "/placeholder-user.jpg",
     labels: [
       { text: "Dell", color: "blue" },
       { text: "Quarterly Review", color: "green" },
@@ -250,7 +250,7 @@ const callsData = [
     pendingTasks: 1,
     aiSummary: "Initial discovery session focused on manufacturing processes and automation opportunities...",
     owner: "Lisa",
-    ownerAvatar: "/professional-woman-diverse.png",
+    ownerAvatar: "/placeholder-user.jpg",
     labels: [
       { text: "Acme Robotics", color: "purple" },
       { text: "Discovery", color: "blue" },
@@ -1534,7 +1534,7 @@ Best regards,`,
                 <HelpCircle className="h-4 w-4" />
               </Button>
               <Avatar className="h-8 w-8 cursor-pointer" onClick={() => setIsUserSettingsOpen(true)}>
-                <AvatarImage src="/diverse-user-avatars.png" />
+                <AvatarImage src="/placeholder-user.jpg" />
                 <AvatarFallback>AK</AvatarFallback>
               </Avatar>
             </div>

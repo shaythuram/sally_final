@@ -16,6 +16,7 @@ function createWindow() {
       contextIsolation: true,
       enableRemoteModule: false,
       webSecurity: true,
+      allowRunningInsecureContent: false,
     },
     icon: path.join(__dirname, '../public/placeholder-logo.png'),
     titleBarStyle: 'default',
@@ -39,6 +40,24 @@ function createWindow() {
     // Open DevTools in development
     if (isDev) {
       mainWindow.webContents.openDevTools();
+    }
+  });
+
+  // Handle page load errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.log('Page failed to load:', errorCode, errorDescription, validatedURL);
+    if (isDev && errorCode === -2) {
+      // Network error, retry after a short delay
+      setTimeout(() => {
+        mainWindow.loadURL(startUrl);
+      }, 2000);
+    }
+  });
+
+  // Handle console messages
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level === 3) { // Error level
+      console.log('Console error:', message);
     }
   });
 

@@ -35,8 +35,8 @@ const mockCallsData = {
       date: "2025-08-25T16:00:00Z",
       duration: 45,
       attendees: [
-        { name: "Mei Qi", email: "mei.qi@dell.com", avatar: "/professional-woman-diverse.png" },
-        { name: "Akshith", email: "ak@sally.ai", avatar: "/professional-man.png" },
+        { name: "Mei Qi", email: "mei.qi@dell.com", avatar: "/placeholder-user.jpg" },
+        { name: "Akshith", email: "ak@sally.ai", avatar: "/placeholder-user.jpg" },
       ],
       stage: "Demo",
       owner: "Akshith",
@@ -53,8 +53,8 @@ const mockCallsData = {
       date: "2025-08-24T14:30:00Z",
       duration: 60,
       attendees: [
-        { name: "Sarah Johnson", email: "sarah.j@kyndryl.com", avatar: "/professional-woman-diverse.png" },
-        { name: "Mike Torres", email: "m.torres@kyndryl.com", avatar: "/professional-man.png" },
+        { name: "Sarah Johnson", email: "sarah.j@kyndryl.com", avatar: "/placeholder-user.jpg" },
+        { name: "Mike Torres", email: "m.torres@kyndryl.com", avatar: "/placeholder-user.jpg" },
       ],
       stage: "Security Review",
       owner: "Maria",
@@ -71,9 +71,9 @@ const mockCallsData = {
       date: "2025-08-23T10:00:00Z",
       duration: 90,
       attendees: [
-        { name: "Mike Chen", email: "mike.chen@acme.com", avatar: "/professional-man.png" },
-        { name: "Lisa Wong", email: "lisa.wong@acme.com", avatar: "/professional-woman-diverse.png" },
-        { name: "David Park", email: "d.park@acme.com", avatar: "/professional-man.png" },
+        { name: "Mike Chen", email: "mike.chen@acme.com", avatar: "/placeholder-user.jpg" },
+        { name: "Lisa Wong", email: "lisa.wong@acme.com", avatar: "/placeholder-user.jpg" },
+        { name: "David Park", email: "d.park@acme.com", avatar: "/placeholder-user.jpg" },
       ],
       stage: "Pilot Review",
       owner: "David",
@@ -90,8 +90,8 @@ const mockCallsData = {
       date: "2025-08-22T15:00:00Z",
       duration: 75,
       attendees: [
-        { name: "Jennifer Adams", email: "j.adams@globex.com", avatar: "/professional-woman-diverse.png" },
-        { name: "Robert Kim", email: "r.kim@globex.com", avatar: "/professional-man.png" },
+        { name: "Jennifer Adams", email: "j.adams@globex.com", avatar: "/placeholder-user.jpg" },
+        { name: "Robert Kim", email: "r.kim@globex.com", avatar: "/placeholder-user.jpg" },
       ],
       stage: "Technical Review",
       owner: "Alex",
@@ -108,9 +108,9 @@ const mockCallsData = {
       date: "2025-08-21T11:00:00Z",
       duration: 120,
       attendees: [
-        { name: "Mei Qi", email: "mei.qi@dell.com", avatar: "/professional-woman-diverse.png" },
-        { name: "James Wilson", email: "j.wilson@dell.com", avatar: "/professional-man.png" },
-        { name: "Sarah Chen", email: "s.chen@dell.com", avatar: "/professional-woman-diverse.png" },
+        { name: "Mei Qi", email: "mei.qi@dell.com", avatar: "/placeholder-user.jpg" },
+        { name: "James Wilson", email: "j.wilson@dell.com", avatar: "/placeholder-user.jpg" },
+        { name: "Sarah Chen", email: "s.chen@dell.com", avatar: "/placeholder-user.jpg" },
       ],
       stage: "QBR",
       owner: "Akshith",
@@ -127,8 +127,8 @@ const mockCallsData = {
       date: "2025-08-20T13:30:00Z",
       duration: 45,
       attendees: [
-        { name: "Tom Rodriguez", email: "t.rodriguez@acme.com", avatar: "/professional-man.png" },
-        { name: "Emily Zhang", email: "e.zhang@acme.com", avatar: "/professional-woman-diverse.png" },
+        { name: "Tom Rodriguez", email: "t.rodriguez@acme.com", avatar: "/placeholder-user.jpg" },
+        { name: "Emily Zhang", email: "e.zhang@acme.com", avatar: "/placeholder-user.jpg" },
       ],
       stage: "Discovery",
       owner: "Maria",
@@ -145,8 +145,8 @@ const mockCallsData = {
       date: "2025-08-19T16:00:00Z",
       duration: 60,
       attendees: [
-        { name: "Sarah Johnson", email: "sarah.j@kyndryl.com", avatar: "/professional-woman-diverse.png" },
-        { name: "Legal Team", email: "legal@kyndryl.com", avatar: "/professional-man.png" },
+        { name: "Sarah Johnson", email: "sarah.j@kyndryl.com", avatar: "/placeholder-user.jpg" },
+        { name: "Legal Team", email: "legal@kyndryl.com", avatar: "/placeholder-user.jpg" },
       ],
       stage: "Contract",
       owner: "David",
@@ -163,8 +163,8 @@ const mockCallsData = {
       date: "2025-08-18T10:30:00Z",
       duration: 90,
       attendees: [
-        { name: "Jennifer Adams", email: "j.adams@globex.com", avatar: "/professional-woman-diverse.png" },
-        { name: "Product Team", email: "product@globex.com", avatar: "/professional-man.png" },
+        { name: "Jennifer Adams", email: "j.adams@globex.com", avatar: "/placeholder-user.jpg" },
+        { name: "Product Team", email: "product@globex.com", avatar: "/placeholder-user.jpg" },
       ],
       stage: "Product Review",
       owner: "Alex",
@@ -230,7 +230,7 @@ export default function CallsPage() {
                 <HelpCircle className="h-4 w-4" />
               </Button>
               <Avatar className="h-8 w-8">
-                <AvatarImage src="/diverse-user-avatars.png" />
+                <AvatarImage src="/placeholder-user.jpg" />
                 <AvatarFallback>AK</AvatarFallback>
               </Avatar>
             </div>
