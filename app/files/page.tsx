@@ -154,27 +154,24 @@ export default function FilesPage() {
       <header className="sticky top-0 z-50 border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="text-2xl font-bold text-gray-900">
-                Sally
-              </Link>
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <Link href="/" className="hover:text-gray-900">
-                  Home
-                </Link>
-                <span>/</span>
-                {currentFolder ? (
-                  <>
-                    <Link href="/files" className="hover:text-gray-900">
-                      Files
-                    </Link>
-                    <span>/</span>
-                    <span className="text-gray-900">{currentFolderData?.name}</span>
-                  </>
-                ) : (
-                  <span className="text-gray-900">Files</span>
-                )}
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">S</span>
+                </div>
+                <h1 className="text-xl font-semibold">Sally</h1>
               </div>
+              <nav className="text-sm text-muted-foreground flex items-center gap-4">
+                <Link href="/dashboard" className="hover:text-foreground transition-colors">
+                  Dashboard
+                </Link>
+                <Link href="/calls" className="hover:text-foreground transition-colors">
+                  Calls
+                </Link>
+                <Link href="/files" className="hover:text-foreground transition-colors">
+                  Files
+                </Link>
+              </nav>
             </div>
 
             <div className="flex items-center gap-4">

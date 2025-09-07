@@ -38,6 +38,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Textarea } from "@/components/ui/textarea"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
+import Link from "next/link"
 
 const callsData = [
   {
@@ -1452,7 +1453,17 @@ Best regards,`,
                 </div>
                 <h1 className="text-xl font-semibold">Sally</h1>
               </div>
-              <nav className="text-sm text-muted-foreground">{"\n"}</nav>
+              <nav className="text-sm text-muted-foreground flex items-center gap-4">
+                <Link href="/dashboard" className="hover:text-foreground transition-colors">
+                  Dashboard
+                </Link>
+                <Link href="/calls" className="hover:text-foreground transition-colors">
+                  Calls
+                </Link>
+                <Link href="/files" className="hover:text-foreground transition-colors">
+                  Files
+                </Link>
+              </nav>
             </div>
 
             <div className="flex items-center gap-4">

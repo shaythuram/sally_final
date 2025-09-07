@@ -200,12 +200,16 @@ export default function CallsPage() {
                 </div>
                 <h1 className="text-xl font-semibold">Sally</h1>
               </div>
-              <nav className="text-sm text-muted-foreground flex items-center gap-2">
-                <Link href="/" className="hover:text-foreground transition-colors">
-                  Home
+              <nav className="text-sm text-muted-foreground flex items-center gap-4">
+                <Link href="/dashboard" className="hover:text-foreground transition-colors">
+                  Dashboard
                 </Link>
-                <span>/</span>
-                <span>Calls</span>
+                <Link href="/calls" className="hover:text-foreground transition-colors">
+                  Calls
+                </Link>
+                <Link href="/files" className="hover:text-foreground transition-colors">
+                  Files
+                </Link>
               </nav>
             </div>
 
@@ -241,7 +245,7 @@ export default function CallsPage() {
       <div className="container mx-auto px-4 py-6">
         {/* Page Header */}
         <div className="flex items-center gap-4 mb-6">
-          <Link href="/">
+          <Link href="/dashboard">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Dashboard
