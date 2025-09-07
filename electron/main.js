@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === 'true';
 
@@ -17,6 +17,7 @@ function createWindow() {
       enableRemoteModule: false,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      preload: path.join(__dirname, 'preload.js'),
     },
     icon: path.join(__dirname, '../public/placeholder-logo.png'),
     titleBarStyle: 'default',
@@ -72,6 +73,25 @@ function createWindow() {
     return { action: 'deny' };
   });
 }
+
+// IPC handlers
+ipcMain.handle('set-content-protection', async (event, enable) => {
+  try {
+    console.log('IPC: set-content-protection called with:', enable);
+    console.log('Main window exists:', !!mainWindow);
+    
+    if (mainWindow) {
+      mainWindow.setContentProtection(enable);
+      console.log(`Content protection ${enable ? 'enabled' : 'disabled'}`);
+      return { success: true };
+    }
+    console.log('Error: Main window not found');
+    return { success: false, error: 'Window not found' };
+  } catch (error) {
+    console.error('Error setting content protection:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {

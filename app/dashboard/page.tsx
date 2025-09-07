@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Clock,
   Shield,
@@ -84,6 +84,8 @@ const sicodPanels = [
 export default function DashboardPage() {
   const [panels, setPanels] = useState(sicodPanels)
   const [showAllPanels, setShowAllPanels] = useState(true)
+  const [isContentProtected, setIsContentProtected] = useState(false)
+  const [isTranscriptionVisible, setIsTranscriptionVisible] = useState(true)
 
   const togglePanelVisibility = (panelId: string) => {
     setPanels(prev => prev.map(panel => 
@@ -94,6 +96,34 @@ export default function DashboardPage() {
   const handleShowAll = () => {
     setPanels(prev => prev.map(panel => ({ ...panel, isVisible: true })))
     setShowAllPanels(true)
+  }
+
+  const toggleContentProtection = async () => {
+    try {
+      console.log('Toggle content protection clicked')
+      console.log('Window object:', typeof window)
+      console.log('ElectronAPI available:', !!window.electronAPI)
+      
+      // Check if we're in an Electron environment
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        const newState = !isContentProtected
+        console.log('Calling Electron API with state:', newState)
+        const result = await window.electronAPI.setContentProtection(newState)
+        console.log('Electron API result:', result)
+        setIsContentProtected(newState)
+      } else {
+        // Fallback for web environment - just toggle the state
+        const newState = !isContentProtected
+        setIsContentProtected(newState)
+        console.log('Content protection toggled (web fallback):', newState)
+      }
+    } catch (error) {
+      console.error('Failed to toggle content protection:', error)
+    }
+  }
+
+  const toggleTranscriptionVisibility = () => {
+    setIsTranscriptionVisible(!isTranscriptionVisible)
   }
 
   const handleHideAll = () => {
@@ -122,10 +152,19 @@ export default function DashboardPage() {
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span className="text-green-600 font-medium">connected</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4" />
-                    <span>Protect</span>
-                  </div>
+                  <button 
+                    onClick={toggleContentProtection}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-md transition-colors ${
+                      isContentProtected 
+                        ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Shield className={`h-4 w-4 ${isContentProtected ? 'text-green-600' : 'text-gray-500'}`} />
+                    <span className="font-medium">
+                      {isContentProtected ? 'Protected' : 'Protect'}
+                    </span>
+                  </button>
                   <div className="flex items-center gap-2">
                     <Layers className="h-4 w-4" />
                     <span>Overlay</span>
@@ -156,9 +195,10 @@ export default function DashboardPage() {
 
         {/* Main Content - fills remaining space */}
         <div className="flex-1 flex flex-col px-6 py-6">
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className={`flex-1 grid grid-cols-1 gap-8 ${isTranscriptionVisible ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
             {/* Left Column - Live Transcription */}
-            <div className="lg:col-span-1">
+            {isTranscriptionVisible && (
+              <div className="lg:col-span-1">
               <Card className="h-full shadow-sm">
                 <CardHeader className="pb-6">
                   <div className="flex items-center justify-between">
@@ -166,9 +206,18 @@ export default function DashboardPage() {
                       <Clock className="h-5 w-5 text-gray-600" />
                       <CardTitle className="text-lg font-semibold">Live Transcription</CardTitle>
                     </div>
-                    <Badge variant="outline" className="text-xs px-3 py-1">
-                      Quick Answers
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs px-3 py-1">
+                        Quick Answers
+                      </Badge>
+                      <button
+                        onClick={toggleTranscriptionVisibility}
+                        className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+                        title="Toggle Live Transcription"
+                      >
+                        <X className="h-4 w-4 text-gray-500 hover:text-gray-700" />
+                      </button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -208,95 +257,62 @@ export default function DashboardPage() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
+              </div>
+            )}
 
             {/* Right Column - SICOD Panels */}
-            <div className="lg:col-span-2">
+            <div className={isTranscriptionVisible ? "lg:col-span-2" : "lg:col-span-1"}>
               <div className="flex gap-8 h-full">
                 {/* Left side - 3 panels */}
                 <div className="flex-1 flex flex-col space-y-6">
-                  <Card className="flex-1 shadow-sm border border-gray-200">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="flex items-center gap-3 text-base font-semibold">
-                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                          D
-                        </div>
-                        Decision Criteria
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        What factors is the buyer using to evaluate potential solutions?
-                      </p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="flex-1 shadow-sm border border-gray-200">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="flex items-center gap-3 text-base font-semibold">
-                        <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                          S
-                        </div>
-                        Situation
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        What is the current state of the buyer's tools, workflow, or operations?
-                      </p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="flex-1 shadow-sm border border-gray-200">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="flex items-center gap-3 text-base font-semibold">
-                        <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                          O
-                        </div>
-                        Objectives
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        What goals is the buyer trying to achieve in the next 3-12 months?
-                      </p>
-                    </CardContent>
-                  </Card>
+                  {panels
+                    .filter(p => ['decision', 'situation', 'objectives'].includes(p.id) && p.isVisible)
+                    .map((panel) => (
+                      <Card 
+                        key={panel.id} 
+                        className="flex-1 shadow-sm border border-gray-200"
+                      >
+                        <CardHeader className="pb-4">
+                          <CardTitle className="flex items-center gap-3 text-base font-semibold">
+                            <div className={`w-8 h-8 ${panel.color} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
+                              {panel.letter}
+                            </div>
+                            {panel.title}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 leading-relaxed">
+                            {panel.content}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
                 </div>
 
                 {/* Right side - 2 panels */}
                 <div className="flex-1 flex flex-col space-y-6">
-                  <Card className="flex-1 shadow-sm border border-gray-200">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="flex items-center gap-3 text-base font-semibold">
-                        <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                          I
-                        </div>
-                        Impact
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        What are the business or technical impacts if this problem is solved?
-                      </p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="flex-1 shadow-sm border border-gray-200">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="flex items-center gap-3 text-base font-semibold">
-                        <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                          C
-                        </div>
-                        Challenges
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        What pain points or limitations is the buyer currently facing?
-                      </p>
-                    </CardContent>
-                  </Card>
+                  {panels
+                    .filter(p => ['impact', 'challenges'].includes(p.id) && p.isVisible)
+                    .map((panel) => (
+                      <Card 
+                        key={panel.id} 
+                        className="flex-1 shadow-sm border border-gray-200"
+                      >
+                        <CardHeader className="pb-4">
+                          <CardTitle className="flex items-center gap-3 text-base font-semibold">
+                            <div className={`w-8 h-8 ${panel.color} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
+                              {panel.letter}
+                            </div>
+                            {panel.title}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 leading-relaxed">
+                            {panel.content}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
                 </div>
               </div>
             </div>
@@ -327,11 +343,29 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-6">
+              {/* Live Transcription Toggle */}
+              <button
+                onClick={toggleTranscriptionVisibility}
+                className="flex items-center gap-2 hover:bg-gray-50 px-2 py-1 rounded-md transition-colors group"
+              >
+                <div className={`w-2 h-2 ${isTranscriptionVisible ? 'bg-green-500' : 'bg-gray-300'} rounded-full group-hover:scale-110 transition-transform`}></div>
+                <span className={`text-sm ${isTranscriptionVisible ? 'text-gray-900 font-medium' : 'text-gray-500'} group-hover:text-gray-900 transition-colors`}>
+                  Live Transcription
+                </span>
+              </button>
+              
+              {/* SICOD Panel Toggles */}
               {panels.filter(p => p.id !== "empty").map((panel) => (
-                <div key={panel.id} className="flex items-center gap-2">
-                  <div className={`w-2 h-2 ${panel.isVisible ? 'bg-green-500' : 'bg-gray-300'} rounded-full`}></div>
-                  <span className="text-sm text-gray-600">{panel.title}</span>
-                </div>
+                <button
+                  key={panel.id}
+                  onClick={() => togglePanelVisibility(panel.id)}
+                  className="flex items-center gap-2 hover:bg-gray-50 px-2 py-1 rounded-md transition-colors group"
+                >
+                  <div className={`w-2 h-2 ${panel.isVisible ? 'bg-green-500' : 'bg-gray-300'} rounded-full group-hover:scale-110 transition-transform`}></div>
+                  <span className={`text-sm ${panel.isVisible ? 'text-gray-900 font-medium' : 'text-gray-500'} group-hover:text-gray-900 transition-colors`}>
+                    {panel.title}
+                  </span>
+                </button>
               ))}
             </div>
           </div>
