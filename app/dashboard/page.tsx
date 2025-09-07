@@ -147,46 +147,40 @@ export default function DashboardPage() {
                   </div>
                   <h1 className="text-2xl font-bold">SALLY</h1>
                 </div>
-                <nav className="text-sm text-muted-foreground flex items-center gap-6">
+                <nav className="text-sm text-muted-foreground flex items-center gap-4">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span className="text-green-600 font-medium">connected</span>
                   </div>
+                  
+                  <div className="w-px h-4 bg-gray-300"></div>
+                  
                   <button 
                     onClick={toggleContentProtection}
-                    className={`flex items-center gap-2 px-3 py-1 rounded-md transition-colors ${
+                    className={`flex items-center gap-2 transition-colors ${
                       isContentProtected 
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        ? 'text-green-600 hover:text-green-700' 
+                        : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    <Shield className={`h-4 w-4 ${isContentProtected ? 'text-green-600' : 'text-gray-500'}`} />
-                    <span className="font-medium">
+                    <Shield className={`h-4 w-4 ${isContentProtected ? 'text-green-600' : 'text-gray-600'}`} />
+                    <span>
                       {isContentProtected ? 'Protected' : 'Protect'}
                     </span>
                   </button>
-                  <div className="flex items-center gap-2">
+                  
+                  <div className="flex items-center gap-2 text-gray-600">
                     <Layers className="h-4 w-4" />
                     <span>Overlay</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Test Dashboard</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Play className="h-4 w-4" />
-                    <span>Demo Mode</span>
                   </div>
                 </nav>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center">
                 <Button 
-                  variant="destructive" 
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2"
+                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium"
                 >
-                  <X className="h-4 w-4 mr-2" />
-                  End Call
+                  Start Call
                 </Button>
               </div>
             </div>
