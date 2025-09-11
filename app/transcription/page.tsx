@@ -24,7 +24,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Sidebar } from "@/components/sidebar"
 import { useTranscription } from "@/hooks/use-transcription"
 
 export default function TranscriptionPage() {
@@ -68,44 +67,44 @@ export default function TranscriptionPage() {
   };
 
   return (
-    <Sidebar>
-      <div className="min-h-screen bg-slate-50">
-        {/* Header */}
-        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">S</span>
-                  </div>
-                  <h1 className="text-xl font-semibold">Sally</h1>
+    <div className="h-screen bg-slate-50 flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200 flex-shrink-0">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">S</span>
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  Live Transcription
-                </div>
+                <h1 className="text-xl font-semibold">Sally</h1>
               </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-sm">
-                  <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`} />
-                  <span className="text-muted-foreground">
-                    {isRecording ? 'Recording' : 'Stopped'}
-                  </span>
-                </div>
-                {isRecording && (
-                  <div className="text-lg font-mono font-semibold text-gray-900">
-                    {formatTime(recordingTime)}
-                  </div>
-                )}
+              <div className="text-sm text-muted-foreground">
+                Live Transcription
               </div>
             </div>
-          </div>
-        </header>
 
-        <div className="px-6 py-6">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`} />
+                <span className="text-muted-foreground">
+                  {isRecording ? 'Recording' : 'Stopped'}
+                </span>
+              </div>
+              {isRecording && (
+                <div className="text-lg font-mono font-semibold text-gray-900">
+                  {formatTime(recordingTime)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-6 py-6 flex-1 flex flex-col">
           {/* Page Header */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-4 mb-6 flex-shrink-0">
             <div>
               <h1 className="text-2xl font-bold">Live Transcription</h1>
               <p className="text-muted-foreground">Record and transcribe system audio and microphone input in real-time</p>
@@ -113,7 +112,7 @@ export default function TranscriptionPage() {
           </div>
 
           {/* Controls Section */}
-          <Card className="mb-6">
+          <Card className="mb-6 flex-shrink-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
@@ -239,7 +238,7 @@ export default function TranscriptionPage() {
 
           {/* Speaker Legend */}
           {diarizationEnabled && systemSpeakers.size > 0 && (
-            <Card className="mb-6">
+            <Card className="mb-6 flex-shrink-0">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Users className="h-5 w-5" />
@@ -268,7 +267,7 @@ export default function TranscriptionPage() {
 
           {/* Current Message Preview */}
           {currentMicMessage && (
-            <Card className="mb-6">
+            <Card className="mb-6 flex-shrink-0">
               <CardContent className="pt-6">
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <div className="flex items-center gap-2 text-blue-700 mb-2">
@@ -282,7 +281,7 @@ export default function TranscriptionPage() {
           )}
 
           {/* Live Transcription Chat */}
-          <Card>
+          <Card className="flex-1 flex flex-col min-h-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Volume2 className="h-5 w-5" />
@@ -292,8 +291,8 @@ export default function TranscriptionPage() {
                 Real-time transcription of system audio and microphone input
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-96 w-full">
+            <CardContent className="flex-1 flex flex-col min-h-0">
+              <ScrollArea className="flex-1 w-full">
                 <div className="space-y-3 pr-4">
                   {allMessages.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
@@ -366,6 +365,6 @@ export default function TranscriptionPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </div>
   )
 }
