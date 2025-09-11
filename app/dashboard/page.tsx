@@ -100,7 +100,7 @@ export default function DashboardPage() {
   const [showAllPanels, setShowAllPanels] = useState(true)
   const [isContentProtected, setIsContentProtected] = useState(false)
   const [isTranscriptionVisible, setIsTranscriptionVisible] = useState(true)
-  const [showQuickAnswers, setShowQuickAnswers] = useState(false)
+  const [showGenie, setShowGenie] = useState(false)
   const [userInput, setUserInput] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -163,11 +163,11 @@ export default function DashboardPage() {
     setIsTranscriptionVisible(!isTranscriptionVisible)
   }
 
-  const toggleQuickAnswers = () => {
-    setShowQuickAnswers(!showQuickAnswers)
+  const toggleGenie = () => {
+    setShowGenie(!showGenie)
   }
 
-  const handleQuickAnswerSubmit = (e: React.FormEvent) => {
+  const handleGenieSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (userInput.trim()) {
       // TODO: Handle user input submission
@@ -293,31 +293,26 @@ export default function DashboardPage() {
                   <CardHeader className="pb-6">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        {showQuickAnswers ? (
+                        {showGenie ? (
                           <MessageSquare className="h-5 w-5 text-gray-600" />
                         ) : (
                           <Clock className="h-5 w-5 text-gray-600" />
                         )}
                         <CardTitle className="text-lg font-semibold">
-                          {showQuickAnswers ? 'Quick Answers' : 'Live Transcription'}
+                          {showGenie ? 'Genie' : 'Live Transcription'}
                         </CardTitle>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={toggleQuickAnswers}
-                          className="hover:bg-gray-100 rounded-md transition-colors"
-                        >
-                          <Badge 
-                            variant={showQuickAnswers ? "default" : "outline"} 
-                            className={`text-xs px-3 py-1 cursor-pointer ${
-                              showQuickAnswers 
-                                ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                                : 'hover:bg-blue-50 hover:border-blue-300'
-                            }`}
-                          >
-                            Quick Answers
-                          </Badge>
-                        </button>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-medium text-gray-600">
+                            Genie
+                          </label>
+                          <Switch
+                            checked={showGenie}
+                            onCheckedChange={toggleGenie}
+                            className="scale-75"
+                          />
+                        </div>
                         <button
                           onClick={toggleTranscriptionVisibility}
                           className="p-1 hover:bg-gray-100 rounded-md transition-colors"
@@ -329,8 +324,8 @@ export default function DashboardPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {showQuickAnswers ? (
-                      /* Quick Answers Content */
+                    {showGenie ? (
+                      /* Genie Content */
                       <>
                         <div className="bg-gray-50 rounded-lg p-3 h-[300px] flex flex-col">
                           <div className="flex-1 flex items-center justify-center">
@@ -343,7 +338,7 @@ export default function DashboardPage() {
                         </div>
                         
                         {/* User Input */}
-                        <form onSubmit={handleQuickAnswerSubmit} className="flex gap-2">
+                        <form onSubmit={handleGenieSubmit} className="flex gap-2">
                           <Input
                             value={userInput}
                             onChange={(e) => setUserInput(e.target.value)}
