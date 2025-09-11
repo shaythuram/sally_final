@@ -44,47 +44,117 @@ const mockTranscriptionData = {
   }
 }
 
-const sicodPanels = [
-  {
-    id: "decision",
-    letter: "D",
-    title: "Decision Criteria",
-    color: "bg-blue-500",
-    content: "What factors is the buyer using to evaluate potential solutions?",
-    isVisible: true
-  },
-  {
-    id: "impact", 
-    letter: "I",
-    title: "Impact",
-    color: "bg-green-500",
-    content: "What are the business or technical impacts if this problem is solved?",
-    isVisible: true
-  },
-  {
-    id: "situation",
-    letter: "S", 
-    title: "Situation",
-    color: "bg-purple-500",
-    content: "What is the current state of the buyer's tools, workflow, or operations?",
-    isVisible: true
-  },
-  {
-    id: "challenges",
-    letter: "C",
-    title: "Challenges", 
-    color: "bg-red-500",
-    content: "What pain points or limitations is the buyer currently facing?",
-    isVisible: true
-  },
-  {
-    id: "objectives",
-    letter: "O",
-    title: "Objectives",
-    color: "bg-orange-500", 
-    content: "What goals is the buyer trying to achieve in the next 3-12 months?",
-    isVisible: true
-  },
+// Helper function to get DISCO panel data
+const getDiscoPanelData = (discoData: any) => {
+  // Helper function to check if value is meaningful (for fallback text)
+  const hasMeaningfulData = (value: any) => {
+    return value && 
+           value !== "None yet" && 
+           value !== "none yet" && 
+           value !== "None" && 
+           value !== "none" && 
+           value.trim() !== "";
+  };
+  
+  // Helper function to format content for display
+  const formatContent = (value: any, fallback: string) => {
+    if (!value) return fallback;
+    
+    // If it's "None yet" or similar, show it as is
+    if (value === "None yet" || value === "none yet" || value === "None" || value === "none") {
+      return value;
+    }
+    
+    // If it's an array, join it with bullet points
+    if (Array.isArray(value)) {
+      return value.map(item => `• ${item}`).join('\n');
+    }
+    
+    // If it's a string, check if it contains bullet points or needs formatting
+    if (typeof value === 'string') {
+      // If it already contains bullet points, return as is
+      if (value.includes('•') || value.includes('-') || value.includes('*')) {
+        return value;
+      }
+      
+      // If it contains line breaks or multiple sentences, format as bullet points
+      if (value.includes('\n') || (value.includes('. ') && value.split('. ').length > 2)) {
+        const lines = value.split('\n').filter(line => line.trim());
+        if (lines.length > 1) {
+          return lines.map(line => `• ${line.trim()}`).join('\n');
+        }
+        
+        // Split by sentences and format as bullet points
+        const sentences = value.split('. ').filter(sentence => sentence.trim());
+        if (sentences.length > 1) {
+          return sentences.map(sentence => `• ${sentence.trim()}`).join('\n');
+        }
+      }
+      
+      // If it's a single sentence, return as is
+      return value;
+    }
+    
+    // Otherwise return the value as is
+    return value;
+  };
+  
+  const panels = [
+    {
+      id: "decision",
+      letter: "D",
+      title: "Decision Criteria",
+      color: "bg-blue-500",
+      content: formatContent(
+        discoData.Decision_Criteria, 
+        "What factors is the buyer using to evaluate potential solutions?"
+      ),
+      isVisible: true
+    },
+    {
+      id: "impact", 
+      letter: "I",
+      title: "Impact",
+      color: "bg-green-500",
+      content: formatContent(
+        discoData.Impact,
+        "What are the business or technical impacts if this problem is solved?"
+      ),
+      isVisible: true
+    },
+    {
+      id: "situation",
+      letter: "S", 
+      title: "Situation",
+      color: "bg-purple-500",
+      content: formatContent(
+        discoData.Situation,
+        "What is the current state of the buyer's tools, workflow, or operations?"
+      ),
+      isVisible: true
+    },
+    {
+      id: "challenges",
+      letter: "C",
+      title: "Challenges", 
+      color: "bg-red-500",
+      content: formatContent(
+        discoData.Challenges,
+        "What pain points or limitations is the buyer currently facing?"
+      ),
+      isVisible: true
+    },
+    {
+      id: "objectives",
+      letter: "O",
+      title: "Objectives",
+      color: "bg-orange-500", 
+      content: formatContent(
+        discoData.Objectives,
+        "What goals is the buyer trying to achieve in the next 3-12 months?"
+      ),
+      isVisible: true
+    },
   {
     id: "empty",
     letter: "",
@@ -93,16 +163,19 @@ const sicodPanels = [
     content: "",
     isVisible: false
   }
-]
+  ];
+  
+  return panels;
+}
 
 export default function DashboardPage() {
-  const [panels, setPanels] = useState(sicodPanels)
   const [showAllPanels, setShowAllPanels] = useState(true)
   const [isContentProtected, setIsContentProtected] = useState(false)
   const [isTranscriptionVisible, setIsTranscriptionVisible] = useState(true)
   const [showGenie, setShowGenie] = useState(false)
   const [userInput, setUserInput] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   
   // Transcription functionality
   const {
@@ -117,42 +190,42 @@ export default function DashboardPage() {
     systemSpeakers,
     diarizationEnabled,
     allMessages,
+    discoData,
+    isAnalyzingDisco,
+    discoError,
+    rawDiscoResponse,
     setSelectedScreenSource,
     setDiarizationEnabled,
     startUnifiedRecording,
     stopUnifiedRecording,
     getSpeakerColor,
+    analyzeDisco,
   } = useTranscription()
 
+  // Get dynamic DISCO panel data
+  const panels = getDiscoPanelData(discoData)
+  
+
   const togglePanelVisibility = (panelId: string) => {
-    setPanels(prev => prev.map(panel => 
-      panel.id === panelId ? { ...panel, isVisible: !panel.isVisible } : panel
-    ))
+    // For now, we'll keep the panels always visible since they're dynamic
+    // In the future, you could add panel visibility state if needed
   }
 
   const handleShowAll = () => {
-    setPanels(prev => prev.map(panel => ({ ...panel, isVisible: true })))
     setShowAllPanels(true)
   }
 
   const toggleContentProtection = async () => {
     try {
-      console.log('Toggle content protection clicked')
-      console.log('Window object:', typeof window)
-      console.log('ElectronAPI available:', !!window.electronAPI)
-      
       // Check if we're in an Electron environment
       if (typeof window !== 'undefined' && window.electronAPI) {
         const newState = !isContentProtected
-        console.log('Calling Electron API with state:', newState)
         const result = await window.electronAPI.setContentProtection(newState)
-        console.log('Electron API result:', result)
         setIsContentProtected(newState)
       } else {
         // Fallback for web environment - just toggle the state
         const newState = !isContentProtected
         setIsContentProtected(newState)
-        console.log('Content protection toggled (web fallback):', newState)
       }
     } catch (error) {
       console.error('Failed to toggle content protection:', error)
@@ -171,13 +244,25 @@ export default function DashboardPage() {
     e.preventDefault()
     if (userInput.trim()) {
       // TODO: Handle user input submission
-      console.log("User input:", userInput)
       setUserInput("")
     }
   }
 
+  const handleManualDiscoAnalysis = async () => {
+    const conversation = allMessages
+      .filter(msg => msg.isFinal && msg.text.trim())
+      .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
+      .join('\n');
+    
+    if (conversation.trim().length > 0) {
+      await analyzeDisco(conversation);
+    } else {
+      alert('No conversation content to analyze. Please record some conversation first.');
+    }
+  }
+
+
   const handleHideAll = () => {
-    setPanels(prev => prev.map(panel => ({ ...panel, isVisible: false })))
     setShowAllPanels(false)
   }
 
@@ -192,7 +277,14 @@ export default function DashboardPage() {
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (scrollAreaRef.current) {
+      // Use setTimeout to ensure the DOM has updated
+      setTimeout(() => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+        }
+      }, 100);
+    }
   }, [allMessages]);
 
   const formatMessageTime = (timestamp: Date) => {
@@ -254,6 +346,28 @@ export default function DashboardPage() {
                       {formatTime(recordingTime)}
                     </div>
                   </div>
+                )}
+                
+                {/* DISCO Analysis Button */}
+                {allMessages.length > 0 && (
+                  <Button 
+                    onClick={handleManualDiscoAnalysis}
+                    disabled={isAnalyzingDisco}
+                    variant="outline"
+                    className="px-3 py-2 text-sm font-medium"
+                  >
+                    {isAnalyzingDisco ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Layers className="h-4 w-4 mr-2" />
+                        Analyze DISCO
+                      </>
+                    )}
+                  </Button>
                 )}
                 
                 {/* Recording Controls */}
@@ -402,7 +516,7 @@ export default function DashboardPage() {
                             </div>
                           ) : (
                             <div className="flex-1 overflow-hidden">
-                              <ScrollArea className="h-full w-full">
+                              <div ref={scrollAreaRef} className="h-full w-full overflow-y-auto">
                                 <div className="space-y-2 pr-2 pb-2 min-h-full">
                                   {allMessages.map((message) => (
                                     <div
@@ -444,23 +558,25 @@ export default function DashboardPage() {
                                   ))}
                                   <div ref={messagesEndRef} />
                                 </div>
-                              </ScrollArea>
+                              </div>
                             </div>
                           )}
                         </div>
 
                         {/* Error Messages */}
-                        {(systemTranscriptionError || transcriptionError) && (
+                        {(systemTranscriptionError || transcriptionError || discoError) && (
                           <div className="p-2 bg-red-50 border border-red-200 rounded text-xs">
                             <div className="flex items-center gap-1 text-red-700 mb-1">
                               <AlertCircle className="h-3 w-3" />
                               <span className="font-medium">Error</span>
                             </div>
                             <p className="text-red-600">
-                              {systemTranscriptionError || transcriptionError}
+                              {systemTranscriptionError || transcriptionError || discoError}
                             </p>
                           </div>
                         )}
+                        
+                        
                       </>
                     )}
                   </CardContent>
@@ -483,16 +599,30 @@ export default function DashboardPage() {
                         <CardHeader className="pb-4">
                           <CardTitle className="flex items-center gap-3 text-base font-semibold">
                             <div className={`w-8 h-8 ${panel.color} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
-                              {panel.letter}
+                              {isAnalyzingDisco ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                panel.letter
+                              )}
                             </div>
                             {panel.title}
                           </CardTitle>
                         </CardHeader>
-                        <CardContent>
-                          <p className="text-sm text-gray-600 leading-relaxed">
-                            {panel.content}
-                          </p>
-                        </CardContent>
+                         <CardContent>
+                           <div className={`text-sm leading-relaxed ${
+                             panel.content === "None yet" || panel.content === "none yet" || panel.content === "None" || panel.content === "none"
+                               ? "text-orange-600 font-medium italic"
+                               : "text-gray-600"
+                           }`}>
+                             {panel.content.includes('\n') ? (
+                               <div className="whitespace-pre-line space-y-1">
+                                 {panel.content}
+                               </div>
+                             ) : (
+                               <p>{panel.content}</p>
+                             )}
+                           </div>
+                         </CardContent>
                       </Card>
                     ))}
                 </div>
@@ -509,16 +639,30 @@ export default function DashboardPage() {
                         <CardHeader className="pb-4">
                           <CardTitle className="flex items-center gap-3 text-base font-semibold">
                             <div className={`w-8 h-8 ${panel.color} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
-                              {panel.letter}
+                              {isAnalyzingDisco ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                panel.letter
+                              )}
                             </div>
                             {panel.title}
                           </CardTitle>
                         </CardHeader>
-                        <CardContent>
-                          <p className="text-sm text-gray-600 leading-relaxed">
-                            {panel.content}
-                          </p>
-                        </CardContent>
+                         <CardContent>
+                           <div className={`text-sm leading-relaxed ${
+                             panel.content === "None yet" || panel.content === "none yet" || panel.content === "None" || panel.content === "none"
+                               ? "text-orange-600 font-medium italic"
+                               : "text-gray-600"
+                           }`}>
+                             {panel.content.includes('\n') ? (
+                               <div className="whitespace-pre-line space-y-1">
+                                 {panel.content}
+                               </div>
+                             ) : (
+                               <p>{panel.content}</p>
+                             )}
+                           </div>
+                         </CardContent>
                       </Card>
                     ))}
                 </div>

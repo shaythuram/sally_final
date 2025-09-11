@@ -11,6 +11,14 @@ export interface TranscriptionMessage {
   isAccumulating?: boolean;
 }
 
+export interface DiscoData {
+  Decision_Criteria?: string | string[];
+  Impact?: string | string[];
+  Situation?: string | string[];
+  Challenges?: string | string[];
+  Objectives?: string | string[];
+}
+
 export interface TranscriptionState {
   isRecording: boolean;
   recordingTime: number;
@@ -47,6 +55,12 @@ export const useTranscription = () => {
 
   // Messages
   const [allMessages, setAllMessages] = useState<TranscriptionMessage[]>([]);
+  
+  // DISCO Analysis state
+  const [discoData, setDiscoData] = useState<DiscoData>({});
+  const [isAnalyzingDisco, setIsAnalyzingDisco] = useState(false);
+  const [discoError, setDiscoError] = useState('');
+  const [rawDiscoResponse, setRawDiscoResponse] = useState<any>(null);
 
   // Refs
   const systemVideoRef = useRef<HTMLVideoElement>(null);
@@ -62,6 +76,7 @@ export const useTranscription = () => {
   const micMicrophoneRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const systemBurstTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const discoAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Speaker color generation
   const getSpeakerColor = useCallback((speakerId: number) => {
@@ -76,6 +91,194 @@ export const useTranscription = () => {
     }
     return systemSpeakers.get(speakerId);
   }, [systemSpeakers]);
+
+  // DISCO Analysis function
+  const analyzeDisco = useCallback(async (conversation: string) => {
+    try {
+      console.log('🚀 Starting DISCO analysis...');
+      console.log('📊 Current DISCO data:', discoData);
+      console.log('💬 Conversation to analyze:', conversation);
+      
+      setIsAnalyzingDisco(true);
+      setDiscoError('');
+      
+      const requestBody = {
+        conversation,
+        context: {
+          type: 'live_transcription',
+          currentDISCO: discoData
+        }
+      };
+      
+      console.log('📤 Sending request to DISCO API:', {
+        url: 'http://localhost:8000/api/analyze-disco',
+        body: requestBody
+      });
+      
+      const response = await fetch('http://localhost:8000/api/analyze-disco', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      console.log('📡 Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      console.log('📥 Full API Response:', result);
+      
+      // Store raw response for debugging
+      setRawDiscoResponse(result);
+      
+      // Check if response has the expected structure
+      if (result.success && result.data) {
+        // Standard API response format: { success: true, data: { ... } }
+        console.log('✅ DISCO analysis completed successfully (standard format)', result.data);
+        setDiscoData(prev => ({
+          ...prev,
+          ...result.data
+        }));
+      } else if (result.Decision_Criteria !== undefined || result.Impact !== undefined || result.Situation !== undefined || result.Challenges !== undefined || result.Objectives !== undefined) {
+        // Direct DISCO data format: { Decision_Criteria: "...", Impact: "...", ... }
+        console.log('✅ DISCO analysis completed successfully (direct format)', result);
+        setDiscoData(prev => ({
+          ...prev,
+          ...result
+        }));
+      } else {
+        console.error('❌ API returned unexpected response format:', result);
+        throw new Error('Unexpected response format from DISCO analysis API');
+      }
+    } catch (error) {
+      console.error('Error analyzing DISCO:', error);
+      setDiscoError(`DISCO analysis failed: ${(error as Error).message}`);
+    } finally {
+      setIsAnalyzingDisco(false);
+    }
+  }, [discoData]);
+
+  // Automatic DISCO analysis: first after 20 seconds, then every 10 seconds
+  const startDiscoAnalysisInterval = useCallback(() => {
+    if (discoAnalysisTimerRef.current) {
+      clearTimeout(discoAnalysisTimerRef.current);
+    }
+    
+    console.log('🔄 Starting DISCO analysis automation (first after 20s, then every 10s)');
+    
+    // First analysis after 20 seconds
+    const firstAnalysis = setTimeout(() => {
+      console.log('🔍 Raw allMessages data:', allMessages);
+      console.log('🔍 Total messages count:', allMessages.length);
+      
+      // Log each message individually
+      allMessages.forEach((msg, index) => {
+        console.log(`🔍 Message ${index}:`, {
+          id: msg.id,
+          type: msg.type,
+          text: msg.text,
+          isFinal: msg.isFinal,
+          isAccumulating: msg.isAccumulating,
+          speakerId: msg.speakerId,
+          speakerLabel: msg.speakerLabel,
+          timestamp: msg.timestamp
+        });
+      });
+      
+      const finalMessages = allMessages.filter(msg => msg.isFinal && msg.text.trim());
+      console.log('🔍 Final messages after filtering:', finalMessages);
+      console.log('🔍 Final messages count:', finalMessages.length);
+      
+      // Log the filtering process step by step
+      const step1 = allMessages.filter(msg => msg.isFinal);
+      console.log('🔍 Messages with isFinal=true:', step1);
+      
+      const step2 = step1.filter(msg => msg.text.trim());
+      console.log('🔍 Messages with isFinal=true AND non-empty text:', step2);
+      
+      const conversation = finalMessages
+        .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
+        .join('\n');
+      
+      console.log('⏰ First DISCO analysis triggered (after 20s). Conversation length:', conversation.length);
+      console.log('📝 Conversation content:', conversation);
+      console.log('📝 Conversation content (JSON):', JSON.stringify(conversation));
+      
+      // Send to DISCO analysis if we have content
+      if (conversation.trim().length > 0) {
+        console.log('✅ Triggering first DISCO analysis...');
+        analyzeDisco(conversation);
+      } else {
+        console.log('⏭️ Skipping first DISCO analysis - no conversation content yet');
+      }
+      
+      // Start the regular 10-second interval after the first analysis
+      discoAnalysisTimerRef.current = setInterval(() => {
+        console.log('🔍 Raw allMessages data:', allMessages);
+        console.log('🔍 Total messages count:', allMessages.length);
+        
+        // Log each message individually
+        allMessages.forEach((msg, index) => {
+          console.log(`🔍 Message ${index}:`, {
+            id: msg.id,
+            type: msg.type,
+            text: msg.text,
+            isFinal: msg.isFinal,
+            isAccumulating: msg.isAccumulating,
+            speakerId: msg.speakerId,
+            speakerLabel: msg.speakerLabel,
+            timestamp: msg.timestamp
+          });
+        });
+        
+        const finalMessages = allMessages.filter(msg => msg.isFinal && msg.text.trim());
+        console.log('🔍 Final messages after filtering:', finalMessages);
+        console.log('🔍 Final messages count:', finalMessages.length);
+        
+        // Log the filtering process step by step
+        const step1 = allMessages.filter(msg => msg.isFinal);
+        console.log('🔍 Messages with isFinal=true:', step1);
+        
+        const step2 = step1.filter(msg => msg.text.trim());
+        console.log('🔍 Messages with isFinal=true AND non-empty text:', step2);
+        
+        const conversation = finalMessages
+          .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
+          .join('\n');
+        
+        console.log('⏰ Regular DISCO analysis triggered (every 10s). Conversation length:', conversation.length);
+        console.log('📝 Conversation content:', conversation);
+        console.log('📝 Conversation content (JSON):', JSON.stringify(conversation));
+        
+        // Send to DISCO analysis if we have content
+        if (conversation.trim().length > 0) {
+          console.log('✅ Triggering regular DISCO analysis...');
+          analyzeDisco(conversation);
+        } else {
+          console.log('⏭️ Skipping regular DISCO analysis - no conversation content yet');
+        }
+      }, 10000); // Analyze every 10 seconds after the first one
+      
+    }, 20000); // First analysis after 20 seconds
+    
+    // Store the first timeout so we can clear it if needed
+    discoAnalysisTimerRef.current = firstAnalysis;
+  }, [allMessages, analyzeDisco]);
+
+  const stopDiscoAnalysisInterval = useCallback(() => {
+    if (discoAnalysisTimerRef.current) {
+      console.log('🛑 Stopping DISCO analysis automation');
+      clearTimeout(discoAnalysisTimerRef.current);
+      clearInterval(discoAnalysisTimerRef.current);
+      discoAnalysisTimerRef.current = null;
+    }
+  }, []);
 
   // Message management
   const addSystemMessage = useCallback((speakerId: number, speakerLabel: string, text: string, isFinal: boolean = true) => {
@@ -268,7 +471,6 @@ export const useTranscription = () => {
       microphone.connect(processor);
       processor.connect(audioContext.destination);
       
-      console.log('Mic audio processing setup complete'); // Debug log
       
     } catch (error) {
       console.error('Error setting up microphone audio processing:', error);
@@ -330,7 +532,6 @@ export const useTranscription = () => {
       micWsRef.current = ws;
       
       ws.onopen = () => {
-        console.log('Microphone WebSocket connected');
         setMicTranscribing(true);
         setTranscriptionError('');
         
@@ -345,12 +546,10 @@ export const useTranscription = () => {
       
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log('Mic WebSocket message:', data); // Debug log
         
         switch (data.type) {
           case 'transcription':
             if (data.transcript && data.transcript.trim()) {
-              console.log('Adding mic message:', data.transcript, 'is_final:', data.is_final); // Debug log
               // Add real-time microphone message
               addMicMessage(data.transcript, data.is_final);
             }
@@ -394,7 +593,6 @@ export const useTranscription = () => {
       systemWsRef.current = ws;
       
       ws.onopen = () => {
-        console.log('System WebSocket connected');
         setSystemTranscribing(true);
         setSystemTranscriptionError('');
         setSystemSpeakers(new Map()); // Reset speakers for new session
@@ -466,7 +664,7 @@ export const useTranscription = () => {
   // Recording functions
   const startSystemRecording = useCallback(async () => {
     try {
-      const source = screenSources.find(s => s.id === selectedScreenSource);
+      const source = screenSources.find((s: ScreenSource) => s.id === selectedScreenSource);
       if (!source) {
         throw new Error('No source selected');
       }
@@ -474,12 +672,14 @@ export const useTranscription = () => {
       // Get user media with the selected screen source
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
+          // @ts-ignore - Chrome-specific properties for screen capture
           mandatory: {
             chromeMediaSource: 'desktop',
             chromeMediaSourceId: source.id
           }
         },
         video: {
+          // @ts-ignore - Chrome-specific properties for screen capture
           mandatory: {
             chromeMediaSource: 'desktop',
             chromeMediaSourceId: source.id
@@ -545,8 +745,9 @@ export const useTranscription = () => {
 
       // Stop all tracks
       if (systemVideoRef.current && systemVideoRef.current.srcObject) {
-        const tracks = systemVideoRef.current.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
+        const stream = systemVideoRef.current.srcObject as MediaStream;
+        const tracks = stream.getTracks();
+        tracks.forEach((track: MediaStreamTrack) => track.stop());
       }
     }
     
@@ -615,11 +816,12 @@ export const useTranscription = () => {
   // Main recording control
   const startUnifiedRecording = useCallback(async () => {
     try {
-      console.log('Starting unified recording...');
       setIsRecording(true);
       setRecordingTime(0);
       setAllMessages([]);
       setSystemSpeakers(new Map());
+      setDiscoData({}); // Reset DISCO data for new session
+      setDiscoError('');
       
       // Start system recording
       await startSystemRecording();
@@ -632,14 +834,16 @@ export const useTranscription = () => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
       
+      // Start DISCO analysis interval
+      startDiscoAnalysisInterval();
+      
     } catch (error) {
       console.error('Error starting unified recording:', error);
       setIsRecording(false);
     }
-  }, [startSystemRecording, startMicRecording]);
+  }, [startSystemRecording, startMicRecording, startDiscoAnalysisInterval]);
 
   const stopUnifiedRecording = useCallback(() => {
-    console.log('Stopping unified recording...');
     setIsRecording(false);
     
     // Stop system recording
@@ -653,7 +857,10 @@ export const useTranscription = () => {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-  }, [stopSystemRecording, stopMicRecording]);
+    
+    // Stop DISCO analysis interval
+    stopDiscoAnalysisInterval();
+  }, [stopSystemRecording, stopMicRecording, stopDiscoAnalysisInterval]);
 
   // Load screen sources
   const loadScreenSources = useCallback(async () => {
@@ -664,7 +871,7 @@ export const useTranscription = () => {
         setScreenSources(sources);
         
         // Automatically select the first screen source (full screen)
-        const screenSource = sources.find(source => source.id.startsWith('screen:'));
+        const screenSource = sources.find((source: ScreenSource) => source.id.startsWith('screen:'));
         if (screenSource) {
           setSelectedScreenSource(screenSource.id);
         }
@@ -689,6 +896,10 @@ export const useTranscription = () => {
     return () => {
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (systemBurstTimerRef.current) clearInterval(systemBurstTimerRef.current);
+      if (discoAnalysisTimerRef.current) {
+        clearTimeout(discoAnalysisTimerRef.current);
+        clearInterval(discoAnalysisTimerRef.current);
+      }
       if (systemMediaRecorderRef.current) systemMediaRecorderRef.current.stop();
       if (micMediaRecorderRef.current) micMediaRecorderRef.current.stop();
       
@@ -721,6 +932,12 @@ export const useTranscription = () => {
     diarizationEnabled,
     allMessages,
     
+    // DISCO Analysis state
+    discoData,
+    isAnalyzingDisco,
+    discoError,
+    rawDiscoResponse,
+    
     // Refs
     systemVideoRef,
     
@@ -730,5 +947,8 @@ export const useTranscription = () => {
     startUnifiedRecording,
     stopUnifiedRecording,
     getSpeakerColor,
+    analyzeDisco,
+    startDiscoAnalysisInterval,
+    stopDiscoAnalysisInterval,
   };
 };

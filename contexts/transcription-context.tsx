@@ -1,7 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, ReactNode } from 'react'
-import { useTranscription, TranscriptionMessage, ScreenSource } from '@/hooks/use-transcription'
+import { useTranscription, TranscriptionMessage, ScreenSource, DiscoData } from '@/hooks/use-transcription'
 
 interface TranscriptionContextType {
   // State
@@ -19,6 +19,12 @@ interface TranscriptionContextType {
   allMessages: TranscriptionMessage[]
   currentMicMessage: string
   
+  // DISCO Analysis state
+  discoData: DiscoData
+  isAnalyzingDisco: boolean
+  discoError: string
+  rawDiscoResponse: any
+  
   // Refs
   systemVideoRef: React.RefObject<HTMLVideoElement>
   
@@ -28,6 +34,7 @@ interface TranscriptionContextType {
   startUnifiedRecording: () => Promise<void>
   stopUnifiedRecording: () => void
   getSpeakerColor: (speakerId: number) => string
+  analyzeDisco: (conversation: string) => Promise<void>
 }
 
 const TranscriptionContext = createContext<TranscriptionContextType | undefined>(undefined)
