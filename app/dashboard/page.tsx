@@ -174,8 +174,16 @@ export default function DashboardPage() {
   const [isTranscriptionVisible, setIsTranscriptionVisible] = useState(true)
   const [showGenie, setShowGenie] = useState(false)
   const [userInput, setUserInput] = useState("")
+  const [genieMessages, setGenieMessages] = useState<Array<{
+    id: string;
+    type: 'user' | 'ai';
+    content: string;
+    timestamp: string;
+  }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const genieMessagesEndRef = useRef<HTMLDivElement>(null);
+  const genieScrollAreaRef = useRef<HTMLDivElement>(null);
   
   // Transcription functionality
   const {
@@ -194,12 +202,18 @@ export default function DashboardPage() {
     isAnalyzingDisco,
     discoError,
     rawDiscoResponse,
+    quickAnalysisData,
+    isAnalyzingQuick,
+    quickAnalysisError,
     setSelectedScreenSource,
     setDiarizationEnabled,
+    setQuickAnalysisData,
     startUnifiedRecording,
     stopUnifiedRecording,
     getSpeakerColor,
     analyzeDisco,
+    analyzeQuick,
+    sendAiChat,
   } = useTranscription()
 
   // Get dynamic DISCO panel data
@@ -240,22 +254,36 @@ export default function DashboardPage() {
     setShowGenie(!showGenie)
   }
 
-  const handleGenieSubmit = (e: React.FormEvent) => {
+  const handleGenieSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (userInput.trim()) {
-      // TODO: Handle user input submission
+      const userMessage = userInput.trim();
+      
+      // Add user message to quickAnalysisData instead of genieMessages
+      setQuickAnalysisData(prev => {
+        const newContent = `## Your Question\n\n${userMessage}\n\n`;
+        return prev + newContent;
+      });
+      
+      // Send to AI and get response
+      await sendAiChat(userMessage, (response) => {
+        // Response will be added automatically by sendAiChat
+      });
+      
       setUserInput("")
     }
   }
 
   const handleManualDiscoAnalysis = async () => {
     const conversation = allMessages
-      .filter(msg => msg.isFinal && msg.text.trim())
+      .filter(msg => msg.text.trim())
       .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
       .join('\n');
     
     if (conversation.trim().length > 0) {
+      // Trigger both DISCO analysis and Genie real-time help
       await analyzeDisco(conversation);
+      await analyzeQuick(conversation);
     } else {
       alert('No conversation content to analyze. Please record some conversation first.');
     }
@@ -286,6 +314,17 @@ export default function DashboardPage() {
       }, 100);
     }
   }, [allMessages]);
+
+  // Auto-scroll to bottom when new Genie messages arrive
+  useEffect(() => {
+    if (genieScrollAreaRef.current) {
+      setTimeout(() => {
+        if (genieScrollAreaRef.current) {
+          genieScrollAreaRef.current.scrollTop = genieScrollAreaRef.current.scrollHeight;
+        }
+      }, 100);
+    }
+  }, [genieMessages]);
 
   const formatMessageTime = (timestamp: Date) => {
     return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -442,14 +481,105 @@ export default function DashboardPage() {
                       /* Genie Content */
                       <>
                         <div className="bg-gray-50 rounded-lg p-3 h-[300px] flex flex-col">
-                          <div className="flex-1 flex items-center justify-center">
-                            <div className="text-center text-gray-500">
-                              <MessageSquare className="h-8 w-8 mx-auto mb-3 text-gray-400" />
-                              <p className="text-sm font-medium mb-1">Ready to help with your questions</p>
-                              <p className="text-xs">Type your question below to get started</p>
+                          {isAnalyzingQuick ? (
+                            <div className="flex-1 flex items-center justify-center">
+                              <div className="text-center text-gray-500">
+                                <Loader2 className="h-8 w-8 mx-auto mb-3 text-gray-400 animate-spin" />
+                                <p className="text-sm font-medium mb-1">Analyzing conversation...</p>
+                                <p className="text-xs">Getting real-time insights</p>
+                              </div>
                             </div>
-                          </div>
+                          ) : quickAnalysisData ? (
+                            <div className="flex-1 overflow-y-auto">
+                              <div className="text-sm text-gray-700 leading-relaxed space-y-4">
+                                {quickAnalysisData.split('\n\n').map((section, index) => {
+                                  if (section.trim() === '') return null;
+                                  
+                                  if (section.startsWith('## ')) {
+                                    const title = section.replace('## ', '');
+                                    return (
+                                      <div key={index} className="border-l-4 border-blue-500 pl-4">
+                                        <h3 className="font-semibold text-gray-900 mb-2">{title}</h3>
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  if (section.includes('•') || section.includes('-')) {
+                                    const lines = section.split('\n').filter(line => line.trim());
+                                    return (
+                                      <div key={index} className="ml-4">
+                                        <ul className="space-y-1">
+                                          {lines.map((line, lineIndex) => (
+                                            <li key={lineIndex} className="flex items-start">
+                                              <span className="text-blue-500 mr-2">•</span>
+                                              <span>{line.replace(/^[•\-]\s*/, '')}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  return (
+                                    <div key={index} className="bg-white p-3 rounded-lg border border-gray-200">
+                                      <p className="whitespace-pre-wrap">{section}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : genieMessages.length > 0 ? (
+                            <div className="flex-1 overflow-hidden">
+                              <div ref={genieScrollAreaRef} className="h-full w-full overflow-y-auto">
+                                <div className="space-y-3 pr-2 pb-2">
+                                  {genieMessages.map((message) => (
+                                    <div
+                                      key={message.id}
+                                      className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                                    >
+                                      <div
+                                        className={`max-w-[80%] p-3 rounded-lg text-sm ${
+                                          message.type === 'user'
+                                            ? 'bg-blue-500 text-white'
+                                            : 'bg-white text-gray-700 border border-gray-200'
+                                        }`}
+                                      >
+                                        <div className="text-xs opacity-70 mb-1">
+                                          {message.timestamp}
+                                        </div>
+                                        <div className="whitespace-pre-wrap">
+                                          {message.content}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  <div ref={genieMessagesEndRef} />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex-1 flex items-center justify-center">
+                              <div className="text-center text-gray-500">
+                                <MessageSquare className="h-8 w-8 mx-auto mb-3 text-gray-400" />
+                                <p className="text-sm font-medium mb-1">Ready to help with your questions</p>
+                                <p className="text-xs">Type your question below to get started</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
+                        
+                        {/* Error Messages */}
+                        {quickAnalysisError && (
+                          <div className="p-2 bg-red-50 border border-red-200 rounded text-xs">
+                            <div className="flex items-center gap-1 text-red-700 mb-1">
+                              <AlertCircle className="h-3 w-3" />
+                              <span className="font-medium">Genie Error</span>
+                            </div>
+                            <p className="text-red-600">
+                              {quickAnalysisError}
+                            </p>
+                          </div>
+                        )}
                         
                         {/* User Input */}
                         <form onSubmit={handleGenieSubmit} className="flex gap-2">
@@ -458,14 +588,19 @@ export default function DashboardPage() {
                             onChange={(e) => setUserInput(e.target.value)}
                             placeholder="Ask a question about the conversation..."
                             className="flex-1 h-9 text-sm"
+                            disabled={isAnalyzingQuick}
                           />
                           <Button
                             type="submit"
-                            disabled={!userInput.trim()}
+                            disabled={!userInput.trim() || isAnalyzingQuick}
                             size="sm"
                             className="h-9 px-3 bg-blue-600 hover:bg-blue-700 text-white"
                           >
-                            <Send className="h-3 w-3" />
+                            {isAnalyzingQuick ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3" />
+                            )}
                           </Button>
                         </form>
                       </>
@@ -517,43 +652,48 @@ export default function DashboardPage() {
                           ) : (
                             <div className="flex-1 overflow-hidden">
                               <div ref={scrollAreaRef} className="h-full w-full overflow-y-auto">
-                                <div className="space-y-2 pr-2 pb-2 min-h-full">
+                                <div className="space-y-3 pr-2 pb-2">
                                   {allMessages.map((message) => (
                                     <div
                                       key={message.id}
-                                    className={`p-2 rounded-lg text-xs w-full break-words ${
-                                      message.type === 'microphone'
-                                        ? `bg-blue-500 text-white ${message.isAccumulating ? 'opacity-80' : ''}` // You always on the right in blue
-                                        : `text-gray-900 ${message.isAccumulating ? 'opacity-80' : ''}` // Speakers always on the left
-                                    }`}
-                                      style={
-                                        message.type === 'system' && diarizationEnabled && message.speakerId !== undefined
-                                          ? { 
-                                              backgroundColor: getSpeakerColor(message.speakerId),
-                                              color: 'white'
-                                            }
-                                          : message.type === 'system'
-                                          ? { backgroundColor: '#f3f4f6', color: '#374151' }
-                                          : {}
-                                      }
+                                      className={`flex ${message.type === 'microphone' ? 'justify-end' : 'justify-start'}`}
                                     >
-                                      <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-1">
-                                          {message.type === 'microphone' ? null : diarizationEnabled && message.speakerId !== undefined ? (
-                                            <Badge
-                                              className="text-xs px-1 py-0 bg-white text-gray-700 border-gray-300"
-                                            >
-                                              Speaker {message.speakerId + 1}
-                                            </Badge>
-                                          ) : (
-                                            <Badge variant="secondary" className="text-xs px-1 py-0 bg-gray-600 text-white">System</Badge>
-                                          )}
+                                      <div
+                                        className={`max-w-[80%] p-3 rounded-lg text-sm ${
+                                          message.type === 'microphone'
+                                            ? 'bg-blue-500 text-white'
+                                            : 'bg-white text-gray-700 border border-gray-200'
+                                        } ${message.isAccumulating ? 'opacity-80' : ''}`}
+                                        style={
+                                          message.type === 'system' && diarizationEnabled && message.speakerId !== undefined
+                                            ? { 
+                                                backgroundColor: getSpeakerColor(message.speakerId),
+                                                color: 'white',
+                                                border: 'none'
+                                              }
+                                            : {}
+                                        }
+                                      >
+                                        <div className="flex items-center justify-between mb-1">
+                                          <div className="flex items-center gap-1">
+                                            {message.type === 'microphone' ? (
+                                              <span className="text-xs opacity-70">You</span>
+                                            ) : diarizationEnabled && message.speakerId !== undefined ? (
+                                              <span className="text-xs opacity-70">
+                                                Speaker {message.speakerId + 1}
+                                              </span>
+                                            ) : (
+                                              <span className="text-xs opacity-70">System</span>
+                                            )}
+                                          </div>
+                                          <span className="text-xs opacity-70">
+                                            {formatMessageTime(message.timestamp)}
+                                          </span>
                                         </div>
-                                        <span className={`text-xs ${message.type === 'microphone' ? 'text-blue-100' : 'text-gray-500'}`}>
-                                          {formatMessageTime(message.timestamp)}
-                                        </span>
+                                        <div className="whitespace-pre-wrap break-words">
+                                          {message.text}
+                                        </div>
                                       </div>
-                                      <div className="text-sm leading-relaxed break-words">{message.text}</div>
                                     </div>
                                   ))}
                                   <div ref={messagesEndRef} />

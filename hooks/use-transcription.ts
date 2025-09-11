@@ -61,6 +61,11 @@ export const useTranscription = () => {
   const [isAnalyzingDisco, setIsAnalyzingDisco] = useState(false);
   const [discoError, setDiscoError] = useState('');
   const [rawDiscoResponse, setRawDiscoResponse] = useState<any>(null);
+  
+  // Genie Quick Analysis state
+  const [quickAnalysisData, setQuickAnalysisData] = useState<string>('');
+  const [isAnalyzingQuick, setIsAnalyzingQuick] = useState(false);
+  const [quickAnalysisError, setQuickAnalysisError] = useState('');
 
   // Refs
   const systemVideoRef = useRef<HTMLVideoElement>(null);
@@ -164,16 +169,154 @@ export const useTranscription = () => {
     }
   }, [discoData]);
 
+  // Quick Analysis function for Genie
+  const analyzeQuick = useCallback(async (conversation: string) => {
+    try {
+      console.log('🚀 Starting Quick Analysis...');
+      console.log('💬 Conversation for quick analysis:', conversation);
+      
+      setIsAnalyzingQuick(true);
+      setQuickAnalysisError('');
+      
+      const requestBody = {
+        ai_chat: false,
+        conversation: conversation,
+        assistantId: "asst_UhbQJ7HBkkLvj5NeMOd5daVT"
+      };
+      
+      console.log('📤 Sending request to Quick Analysis API:', {
+        url: 'http://localhost:8000/api/generate-quick-answer',
+        body: requestBody
+      });
+      
+      const response = await fetch('http://localhost:8000/api/generate-quick-answer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      console.log('📡 Quick Analysis response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('📥 Quick Analysis response:', result);
+      console.log('📥 Quick Analysis analysis text:', result.analysis); 
+      
+      if (result.analysis) {
+        setQuickAnalysisData(prev => {
+          const newContent = `## Real-time Analysis\n\n${result.analysis}\n\n`;
+          const updated = prev + newContent;
+          console.log('✅ Quick Analysis completed successfully');
+          console.log('✅ Quick Analysis data appended. New content:', result.analysis);
+          console.log('✅ Full Quick Analysis data:', updated);
+          return updated;
+        });
+      } else if (result.response) {
+        // Fallback to response field if analysis doesn't exist
+        setQuickAnalysisData(prev => {
+          const newContent = `## Real-time Analysis\n\n${result.response}\n\n`;
+          const updated = prev + newContent;
+          console.log('✅ Quick Analysis completed successfully (using response field)');
+          console.log('✅ Quick Analysis data appended. New content:', result.response);
+          console.log('✅ Full Quick Analysis data:', updated);
+          return updated;
+        });
+      } else {
+        throw new Error('No analysis or response data from Quick Analysis API');
+      }
+    } catch (error) {
+      console.error('❌ Error in Quick Analysis:', error);
+      setQuickAnalysisError(`Quick Analysis failed: ${(error as Error).message}`);
+    } finally {
+      setIsAnalyzingQuick(false);
+    }
+  }, []);
+
+  // AI Chat function for Genie
+  const sendAiChat = useCallback(async (userQuery: string, onResponse?: (response: string) => void) => {
+    try {
+      console.log('🤖 Starting AI Chat...');
+      console.log('❓ User query:', userQuery);
+      
+      setIsAnalyzingQuick(true);
+      setQuickAnalysisError('');
+      
+      const requestBody = {
+        ai_chat: true,
+        user_query: userQuery,
+        assistantId: "asst_UhbQJ7HBkkLvj5NeMOd5daVT"
+      };
+      
+      console.log('📤 Sending request to AI Chat API:', {
+        url: 'http://localhost:8000/api/generate-quick-answer',
+        body: requestBody
+      });
+      
+      const response = await fetch('http://localhost:8000/api/generate-quick-answer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      console.log('📡 AI Chat response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('📥 AI Chat response:', result);
+      console.log('📥 AI Chat response text:', result.response);
+      
+      if (result.response) {
+        // Call the callback if provided
+        if (onResponse) {
+          onResponse(result.response);
+        }
+        
+        setQuickAnalysisData(prev => {
+          const newContent = `## AI Response\n\n${result.response}\n\n`;
+          const updated = prev + newContent;
+          console.log('✅ AI Chat completed successfully');
+          console.log('✅ AI Chat data appended. New content:', result.response);
+          console.log('✅ Full AI Chat data:', updated);
+          return updated;
+        });
+      } else {
+        throw new Error('No response data from AI Chat API');
+      }
+    } catch (error) {
+      console.error('❌ Error in AI Chat:', error);
+      setQuickAnalysisError(`AI Chat failed: ${(error as Error).message}`);
+    } finally {
+      setIsAnalyzingQuick(false);
+    }
+  }, []);
+
   // Automatic DISCO analysis: first after 20 seconds, then every 10 seconds
   const startDiscoAnalysisInterval = useCallback(() => {
+    console.log('🎯 startDiscoAnalysisInterval function called');
+    
     if (discoAnalysisTimerRef.current) {
+      console.log('🔄 Clearing existing DISCO analysis timer');
       clearTimeout(discoAnalysisTimerRef.current);
     }
     
     console.log('🔄 Starting DISCO analysis automation (first after 20s, then every 10s)');
     
     // First analysis after 20 seconds
+    console.log('⏰ Setting up 20-second timeout for first DISCO analysis');
     const firstAnalysis = setTimeout(() => {
+      console.log('⏰ 20-second timeout fired! Starting first DISCO analysis');
       console.log('🔍 Raw allMessages data:', allMessages);
       console.log('🔍 Total messages count:', allMessages.length);
       
@@ -191,18 +334,12 @@ export const useTranscription = () => {
         });
       });
       
-      const finalMessages = allMessages.filter(msg => msg.isFinal && msg.text.trim());
-      console.log('🔍 Final messages after filtering:', finalMessages);
-      console.log('🔍 Final messages count:', finalMessages.length);
+      // Use all messages with text content, not just final ones
+      const messagesWithText = allMessages.filter(msg => msg.text.trim());
+      console.log('🔍 Messages with text content:', messagesWithText);
+      console.log('🔍 Messages with text count:', messagesWithText.length);
       
-      // Log the filtering process step by step
-      const step1 = allMessages.filter(msg => msg.isFinal);
-      console.log('🔍 Messages with isFinal=true:', step1);
-      
-      const step2 = step1.filter(msg => msg.text.trim());
-      console.log('🔍 Messages with isFinal=true AND non-empty text:', step2);
-      
-      const conversation = finalMessages
+      const conversation = messagesWithText
         .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
         .join('\n');
       
@@ -219,6 +356,7 @@ export const useTranscription = () => {
       }
       
       // Start the regular 10-second interval after the first analysis
+      console.log('⏰ Setting up 10-second interval for regular DISCO analysis');
       discoAnalysisTimerRef.current = setInterval(() => {
         console.log('🔍 Raw allMessages data:', allMessages);
         console.log('🔍 Total messages count:', allMessages.length);
@@ -237,18 +375,12 @@ export const useTranscription = () => {
           });
         });
         
-        const finalMessages = allMessages.filter(msg => msg.isFinal && msg.text.trim());
-        console.log('🔍 Final messages after filtering:', finalMessages);
-        console.log('🔍 Final messages count:', finalMessages.length);
+        // Use all messages with text content, not just final ones
+        const messagesWithText = allMessages.filter(msg => msg.text.trim());
+        console.log('🔍 Messages with text content:', messagesWithText);
+        console.log('🔍 Messages with text count:', messagesWithText.length);
         
-        // Log the filtering process step by step
-        const step1 = allMessages.filter(msg => msg.isFinal);
-        console.log('🔍 Messages with isFinal=true:', step1);
-        
-        const step2 = step1.filter(msg => msg.text.trim());
-        console.log('🔍 Messages with isFinal=true AND non-empty text:', step2);
-        
-        const conversation = finalMessages
+        const conversation = messagesWithText
           .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
           .join('\n');
         
@@ -818,10 +950,16 @@ export const useTranscription = () => {
     try {
       setIsRecording(true);
       setRecordingTime(0);
-      setAllMessages([]);
-      setSystemSpeakers(new Map());
-      setDiscoData({}); // Reset DISCO data for new session
-      setDiscoError('');
+      
+    // Clear all data for fresh start
+    console.log('🧹 Clearing all data for fresh start');
+    setAllMessages([]);
+    setSystemSpeakers(new Map());
+    setDiscoData({});
+    setDiscoError('');
+    setRawDiscoResponse(null);
+    // Keep Genie data persistent - don't clear quickAnalysisData
+    setQuickAnalysisError('');
       
       // Start system recording
       await startSystemRecording();
@@ -835,6 +973,7 @@ export const useTranscription = () => {
       }, 1000);
       
       // Start DISCO analysis interval
+      console.log('🎯 Starting DISCO analysis interval from startUnifiedRecording');
       startDiscoAnalysisInterval();
       
     } catch (error) {
@@ -844,6 +983,7 @@ export const useTranscription = () => {
   }, [startSystemRecording, startMicRecording, startDiscoAnalysisInterval]);
 
   const stopUnifiedRecording = useCallback(() => {
+    console.log('Stopping unified recording...');
     setIsRecording(false);
     
     // Stop system recording
@@ -860,6 +1000,16 @@ export const useTranscription = () => {
     
     // Stop DISCO analysis interval
     stopDiscoAnalysisInterval();
+    
+    // Clear all data for fresh start
+    console.log('🧹 Clearing all data for fresh start');
+    setAllMessages([]);
+    setDiscoData({});
+    setDiscoError('');
+    setRawDiscoResponse(null);
+    // Keep Genie data persistent - don't clear quickAnalysisData
+    setQuickAnalysisError('');
+    setSystemSpeakers(new Map());
   }, [stopSystemRecording, stopMicRecording, stopDiscoAnalysisInterval]);
 
   // Load screen sources
@@ -907,8 +1057,12 @@ export const useTranscription = () => {
       stopMicTranscription();
       if (systemWsRef.current) systemWsRef.current.close();
       if (micWsRef.current) micWsRef.current.close();
-      if (micAudioContextRef.current) micAudioContextRef.current.close();
-      if (systemAudioContextRef.current) systemAudioContextRef.current.close();
+      if (micAudioContextRef.current && micAudioContextRef.current.state !== 'closed') {
+        micAudioContextRef.current.close();
+      }
+      if (systemAudioContextRef.current && systemAudioContextRef.current.state !== 'closed') {
+        systemAudioContextRef.current.close();
+      }
     };
   }, [stopMicTranscription]);
 
@@ -938,17 +1092,25 @@ export const useTranscription = () => {
     discoError,
     rawDiscoResponse,
     
+    // Genie Quick Analysis state
+    quickAnalysisData,
+    isAnalyzingQuick,
+    quickAnalysisError,
+    
     // Refs
     systemVideoRef,
     
     // Actions
     setSelectedScreenSource,
     setDiarizationEnabled,
+    setQuickAnalysisData,
     startUnifiedRecording,
     stopUnifiedRecording,
     getSpeakerColor,
     analyzeDisco,
     startDiscoAnalysisInterval,
     stopDiscoAnalysisInterval,
+    analyzeQuick,
+    sendAiChat,
   };
 };
