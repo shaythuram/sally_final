@@ -1138,6 +1138,171 @@ export const useTranscription = () => {
     }
   }, [startSystemRecording, startMicRecording, startDiscoAnalysisInterval]);
 
+  // Send data to post-call actions API
+  const sendToPostCallActions = useCallback(async (holisticView: any) => {
+    try {
+      console.log('📤 Sending data to post-call actions API...');
+      
+      const requestBody = {
+        inputData: holisticView,
+        assistantId: null
+      };
+      
+      console.log('📤 Post-call actions request:', requestBody);
+      
+      const response = await fetch('http://localhost:8000/api/post-call-actions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      console.log('📡 Post-call actions response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ Post-call actions response:', result);
+      
+    } catch (error) {
+      console.error('❌ Error sending to post-call actions:', error);
+    }
+  }, []);
+
+  // Call data consolidation function
+  const consolidateCallData = useCallback(() => {
+    // 1. TRANSCRIPT DATA
+    const transcriptData = {
+      totalMessages: allMessages.length,
+      messages: allMessages.map(msg => ({
+        id: msg.id,
+        type: msg.type,
+        speaker: msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`,
+        speakerLabel: msg.speakerLabel,
+        text: msg.text,
+        timestamp: msg.timestamp,
+        isFinal: msg.isFinal
+      })),
+      conversationText: allMessages
+        .filter(msg => msg.text.trim())
+        .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
+        .join('\n'),
+      callDuration: recordingTime,
+      speakers: Array.from(systemSpeakers.entries()).map(([id, color]) => ({
+        id,
+        color,
+        label: `Speaker ${id + 1}`
+      }))
+    };
+    
+    // 2. DISCO ANALYSIS DATA
+    const discoAnalysisData = {
+      currentDiscoData: discoData,
+      rawResponse: rawDiscoResponse,
+      error: discoError,
+      isAnalyzing: isAnalyzingDisco,
+      analysisComplete: !isAnalyzingDisco && !discoError && Object.keys(discoData).length > 0
+    };
+    
+    // 3. GENIE DATA - Split into logical sections
+    const splitGenieData = (() => {
+      if (!quickAnalysisData.trim()) {
+        return {
+          realtimeGuidance: [] as Array<{type: string, content: string, timestamp: string}>,
+          qnaPairs: [] as Array<{type: string, content: string, timestamp: string}>,
+          rawData: quickAnalysisData
+        };
+      }
+      
+      const sections = quickAnalysisData.split('## ').filter(section => section.trim());
+      const realtimeGuidance: Array<{type: string, content: string, timestamp: string}> = [];
+      const qnaPairs: Array<{type: string, content: string, timestamp: string}> = [];
+      
+      sections.forEach(section => {
+        const trimmedSection = section.trim();
+        if (trimmedSection.startsWith('Real-time Analysis')) {
+          const content = trimmedSection.replace('Real-time Analysis', '').trim();
+          if (content) {
+            realtimeGuidance.push({
+              type: 'realtime_analysis',
+              content: content,
+              timestamp: new Date().toISOString()
+            });
+          }
+        } else if (trimmedSection.startsWith('AI Response')) {
+          const content = trimmedSection.replace('AI Response', '').trim();
+          if (content) {
+            // Try to detect if this is a Q&A pair or general guidance
+            const isQnA = content.includes('?') || content.includes('Question') || content.includes('Answer');
+            if (isQnA) {
+              qnaPairs.push({
+                type: 'ai_response',
+                content: content,
+                timestamp: new Date().toISOString()
+              });
+            } else {
+              realtimeGuidance.push({
+                type: 'ai_guidance',
+                content: content,
+                timestamp: new Date().toISOString()
+              });
+            }
+          }
+        }
+      });
+      
+      return {
+        realtimeGuidance,
+        qnaPairs,
+        rawData: quickAnalysisData,
+        totalSections: sections.length
+      };
+    })();
+    
+    const genieData = {
+      ...splitGenieData,
+      error: quickAnalysisError,
+      isAnalyzing: isAnalyzingQuick,
+      hasData: quickAnalysisData.trim().length > 0
+    };
+    
+    // 4. HOLISTIC CONVERSATION VIEW FOR AI
+    const holisticView = {
+      conversation: {
+        messages: allMessages
+          .filter(msg => msg.text.trim())
+          .map(msg => ({
+            speaker: msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`,
+            text: msg.text
+          }))
+      },
+      analysis: {
+        disco_framework: discoData,
+        ai_guidance: splitGenieData.realtimeGuidance,
+        qna_interactions: splitGenieData.qnaPairs
+      }
+    };
+    
+    // Log post-call actions request data (API call commented out)
+    const postCallRequest = {
+      inputData: holisticView,
+      assistantId: null
+    };
+    console.log('=== POST-CALL ACTIONS REQUEST DATA ===');
+    console.log(JSON.stringify(postCallRequest, null, 2));
+    console.log('=== END POST-CALL REQUEST ===');
+    
+    // Send to post-call actions API (COMMENTED OUT)
+    // sendToPostCallActions(holisticView);
+    
+    // Return the holistic view for external use
+    return holisticView;
+  }, [allMessages, recordingTime, systemSpeakers, discoData, rawDiscoResponse, discoError, isAnalyzingDisco, quickAnalysisData, quickAnalysisError, isAnalyzingQuick, sendToPostCallActions]);
+
   const stopUnifiedRecording = useCallback(() => {
     console.log('Stopping unified recording...');
     setIsRecording(false);
@@ -1158,6 +1323,9 @@ export const useTranscription = () => {
     // Stop DISCO analysis interval
     stopDiscoAnalysisInterval();
     
+    // CONSOLIDATE AND LOG ALL CALL DATA
+    const consolidatedData = consolidateCallData();
+    
     // Clear all data for fresh start
     console.log('🧹 Clearing all data for fresh start');
     setAllMessages([]);
@@ -1167,7 +1335,7 @@ export const useTranscription = () => {
     // Keep Genie data persistent - don't clear quickAnalysisData
     setQuickAnalysisError('');
     setSystemSpeakers(new Map());
-  }, [stopSystemRecording, stopMicRecording, stopDiscoAnalysisInterval]);
+  }, [stopSystemRecording, stopMicRecording, stopDiscoAnalysisInterval, consolidateCallData]);
 
   // Load screen sources
   const loadScreenSources = useCallback(async () => {
@@ -1297,5 +1465,6 @@ export const useTranscription = () => {
     stopDiscoAnalysisInterval,
     analyzeQuick,
     sendAiChat,
+    consolidateCallData,
   };
 };
