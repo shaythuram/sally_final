@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Clock,
   Shield,
@@ -12,11 +12,22 @@ import {
   Settings,
   Eye,
   EyeOff,
+  Mic,
+  MicOff,
+  Square,
+  Volume2,
+  VolumeX,
+  AlertCircle,
+  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sidebar } from "@/components/sidebar"
+import { useTranscription } from "@/hooks/use-transcription"
 
 // Mock data for the dashboard
 const mockTranscriptionData = {
@@ -86,6 +97,27 @@ export default function DashboardPage() {
   const [showAllPanels, setShowAllPanels] = useState(true)
   const [isContentProtected, setIsContentProtected] = useState(false)
   const [isTranscriptionVisible, setIsTranscriptionVisible] = useState(true)
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Transcription functionality
+  const {
+    isRecording,
+    recordingTime,
+    selectedScreenSource,
+    screenSources,
+    systemTranscribing,
+    micTranscribing,
+    systemTranscriptionError,
+    transcriptionError,
+    systemSpeakers,
+    diarizationEnabled,
+    allMessages,
+    setSelectedScreenSource,
+    setDiarizationEnabled,
+    startUnifiedRecording,
+    stopUnifiedRecording,
+    getSpeakerColor,
+  } = useTranscription()
 
   const togglePanelVisibility = (panelId: string) => {
     setPanels(prev => prev.map(panel => 
@@ -133,6 +165,22 @@ export default function DashboardPage() {
 
   const visiblePanels = panels.filter(panel => panel.isVisible && panel.id !== "empty")
 
+  // Helper functions
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [allMessages]);
+
+  const formatMessageTime = (timestamp: Date) => {
+    return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  }
+
   return (
     <Sidebar>
       <div className="h-screen bg-white flex flex-col">
@@ -176,12 +224,42 @@ export default function DashboardPage() {
                 </nav>
               </div>
 
-              <div className="flex items-center">
-                <Button 
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium"
-                >
-                  Start Call
-                </Button>
+              <div className="flex items-center gap-4">
+                {/* Recording Status */}
+                {isRecording && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      <span className="text-red-600 font-medium">Recording</span>
+                    </div>
+                    <div className="text-gray-500 font-mono">
+                      {formatTime(recordingTime)}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Recording Controls */}
+                <div className="flex items-center gap-2">
+                  {!isRecording ? (
+                    <Button 
+                      onClick={startUnifiedRecording}
+                      disabled={!selectedScreenSource}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium"
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Start Call
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={stopUnifiedRecording}
+                      variant="destructive"
+                      className="px-4 py-2 text-sm font-medium"
+                    >
+                      <Square className="h-4 w-4 mr-2" />
+                      Stop Call
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -193,49 +271,135 @@ export default function DashboardPage() {
             {/* Left Column - Live Transcription */}
             {isTranscriptionVisible && (
               <div className="lg:col-span-1">
-              <Card className="h-full shadow-sm">
-                <CardHeader className="pb-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Clock className="h-5 w-5 text-gray-600" />
-                      <CardTitle className="text-lg font-semibold">Live Transcription</CardTitle>
+                <Card className="h-full shadow-sm">
+                  <CardHeader className="pb-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Clock className="h-5 w-5 text-gray-600" />
+                        <CardTitle className="text-lg font-semibold">Live Transcription</CardTitle>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs px-3 py-1">
+                          Quick Answers
+                        </Badge>
+                        <button
+                          onClick={toggleTranscriptionVisibility}
+                          className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+                          title="Toggle Live Transcription"
+                        >
+                          <X className="h-4 w-4 text-gray-500 hover:text-gray-700" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs px-3 py-1">
-                        Quick Answers
-                      </Badge>
-                      <button
-                        onClick={toggleTranscriptionVisibility}
-                        className="p-1 hover:bg-gray-100 rounded-md transition-colors"
-                        title="Toggle Live Transcription"
-                      >
-                        <X className="h-4 w-4 text-gray-500 hover:text-gray-700" />
-                      </button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Speaker indicators */}
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span className="text-sm font-medium text-gray-700">You</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span className="text-sm font-medium text-gray-700">Customer</span>
-                    </div>
-                  </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
 
-                  {/* Transcription area - empty state */}
-                  <div className="bg-gray-50 rounded-lg p-4 min-h-[200px] flex items-center justify-center">
-                    <div className="text-center text-gray-500">
-                      <Clock className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                      <p className="text-sm">Waiting for transcription...</p>
+                    {/* Diarization Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className={`text-xs font-medium ${isRecording ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Speaker Diarization
+                        {isRecording && <span className="text-xs text-gray-400 ml-1">(Locked during recording)</span>}
+                      </label>
+                      <Switch
+                        checked={diarizationEnabled}
+                        onCheckedChange={setDiarizationEnabled}
+                        disabled={isRecording}
+                        className="scale-75"
+                      />
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    
+                    {/* Speaker Legend */}
+                    {diarizationEnabled && systemSpeakers.size > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {Array.from(systemSpeakers.entries()).map(([speakerId, color]) => (
+                          <Badge
+                            key={speakerId}
+                            className="text-xs px-1 py-0"
+                            style={{
+                              backgroundColor: `${color}20`,
+                              color: color,
+                              borderColor: color,
+                            }}
+                          >
+                            Speaker {speakerId + 1}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+
+                    {/* Transcription Messages */}
+                    <div className="bg-gray-50 rounded-lg p-3 h-[300px] flex flex-col overflow-hidden">
+                      {allMessages.length === 0 ? (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          <div className="text-center">
+                            <Clock className="h-6 w-6 mx-auto mb-2 text-gray-400" />
+                            <p className="text-xs">Waiting for transcription...</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 overflow-hidden">
+                          <ScrollArea className="h-full w-full">
+                            <div className="space-y-2 pr-2 pb-2 min-h-full">
+                              {allMessages.map((message) => (
+                                <div
+                                  key={message.id}
+                                className={`p-2 rounded-lg text-xs w-full break-words ${
+                                  message.type === 'microphone'
+                                    ? `bg-blue-500 text-white ${message.isAccumulating ? 'opacity-80' : ''}` // You always on the right in blue
+                                    : `text-gray-900 ${message.isAccumulating ? 'opacity-80' : ''}` // Speakers always on the left
+                                }`}
+                                  style={
+                                    message.type === 'system' && diarizationEnabled && message.speakerId !== undefined
+                                      ? { 
+                                          backgroundColor: getSpeakerColor(message.speakerId),
+                                          color: 'white'
+                                        }
+                                      : message.type === 'system'
+                                      ? { backgroundColor: '#f3f4f6', color: '#374151' }
+                                      : {}
+                                  }
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-1">
+                                      {message.type === 'microphone' ? null : diarizationEnabled && message.speakerId !== undefined ? (
+                                        <Badge
+                                          className="text-xs px-1 py-0 bg-white text-gray-700 border-gray-300"
+                                        >
+                                          Speaker {message.speakerId + 1}
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="text-xs px-1 py-0 bg-gray-600 text-white">System</Badge>
+                                      )}
+                                    </div>
+                                    <span className={`text-xs ${message.type === 'microphone' ? 'text-blue-100' : 'text-gray-500'}`}>
+                                      {formatMessageTime(message.timestamp)}
+                                    </span>
+                                  </div>
+                                  <div className="text-sm leading-relaxed break-words">{message.text}</div>
+                                </div>
+                              ))}
+                              <div ref={messagesEndRef} />
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Error Messages */}
+                    {(systemTranscriptionError || transcriptionError) && (
+                      <div className="p-2 bg-red-50 border border-red-200 rounded text-xs">
+                        <div className="flex items-center gap-1 text-red-700 mb-1">
+                          <AlertCircle className="h-3 w-3" />
+                          <span className="font-medium">Error</span>
+                        </div>
+                        <p className="text-red-600">
+                          {systemTranscriptionError || transcriptionError}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             )}
 

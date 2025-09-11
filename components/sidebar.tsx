@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Phone,
   FileText,
+  Mic,
   Menu,
   X,
   ChevronLeft,
@@ -25,6 +26,11 @@ const navigation = [
     name: "Calls",
     href: "/calls",
     icon: Phone,
+  },
+  {
+    name: "Transcription",
+    href: "/transcription",
+    icon: Mic,
   },
   {
     name: "Files",

@@ -9,10 +9,13 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  output: 'export',
-  trailingSlash: true,
-  distDir: 'out',
-  assetPrefix: process.env.NODE_ENV === 'production' ? './' : '',
+  // Only use static export for production builds, not development
+  ...(process.env.NODE_ENV === 'production' && {
+    output: 'export',
+    trailingSlash: true,
+    distDir: 'out',
+    assetPrefix: './',
+  }),
 }
 
 export default nextConfig
