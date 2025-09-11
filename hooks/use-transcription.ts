@@ -82,6 +82,102 @@ export const useTranscription = () => {
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const systemBurstTimerRef = useRef<NodeJS.Timeout | null>(null);
   const discoAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // WebSocket connection management
+  const systemWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const micWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const systemWsReconnectAttemptsRef = useRef<number>(0);
+  const micWsReconnectAttemptsRef = useRef<number>(0);
+  const maxReconnectAttempts = 5;
+  const reconnectDelay = 2000; // 2 seconds
+  const isCallActiveRef = useRef<boolean>(false);
+
+  // WebSocket connection health monitoring
+  const checkWebSocketHealth = useCallback((wsRef: React.MutableRefObject<WebSocket | null>, type: 'system' | 'mic') => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn(`${type} WebSocket is not in OPEN state:`, wsRef.current?.readyState);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const reconnectWebSocket = useCallback(async (type: 'system' | 'mic', stream?: MediaStream) => {
+    if (!isCallActiveRef.current) {
+      console.log(`Call not active, skipping ${type} WebSocket reconnection`);
+      return;
+    }
+
+    const attemptsRef = type === 'system' ? systemWsReconnectAttemptsRef : micWsReconnectAttemptsRef;
+    const timeoutRef = type === 'system' ? systemWsReconnectTimeoutRef : micWsReconnectTimeoutRef;
+    const wsRef = type === 'system' ? systemWsRef : micWsRef;
+
+    if (attemptsRef.current >= maxReconnectAttempts) {
+      console.error(`Max reconnection attempts reached for ${type} WebSocket`);
+      if (type === 'system') {
+        setSystemTranscriptionError('Failed to reconnect system WebSocket after multiple attempts');
+      } else {
+        setTranscriptionError('Failed to reconnect microphone WebSocket after multiple attempts');
+      }
+      return;
+    }
+
+    attemptsRef.current += 1;
+    console.log(`Attempting to reconnect ${type} WebSocket (attempt ${attemptsRef.current}/${maxReconnectAttempts})`);
+
+    // Clear existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    // Wait before reconnecting
+    timeoutRef.current = setTimeout(async () => {
+      try {
+        if (type === 'system' && stream) {
+          await startSystemTranscription(stream);
+        } else if (type === 'mic' && stream) {
+          await startMicTranscription(stream);
+        }
+        console.log(`${type} WebSocket reconnected successfully`);
+        attemptsRef.current = 0; // Reset attempts on successful reconnection
+      } catch (error) {
+        console.error(`Failed to reconnect ${type} WebSocket:`, error);
+        // Schedule another reconnection attempt
+        reconnectWebSocket(type, stream);
+      }
+    }, reconnectDelay);
+  }, []);
+
+  const setupWebSocketHeartbeat = useCallback((wsRef: React.MutableRefObject<WebSocket | null>, type: 'system' | 'mic') => {
+    if (!wsRef.current) return;
+
+    const heartbeatInterval = setInterval(() => {
+      if (!checkWebSocketHealth(wsRef, type)) {
+        console.warn(`${type} WebSocket health check failed, attempting reconnection`);
+        clearInterval(heartbeatInterval);
+        // Note: We don't have access to the stream here, so we'll handle reconnection in the onclose handler
+      }
+    }, 5000); // Check every 5 seconds
+
+    // Store interval reference for cleanup
+    if (type === 'system') {
+      (wsRef.current as any).heartbeatInterval = heartbeatInterval;
+    } else {
+      (wsRef.current as any).heartbeatInterval = heartbeatInterval;
+    }
+  }, [checkWebSocketHealth]);
+
+  const cleanupWebSocketHeartbeat = useCallback((wsRef: React.MutableRefObject<WebSocket | null>) => {
+    if (wsRef.current && (wsRef.current as any).heartbeatInterval) {
+      clearInterval((wsRef.current as any).heartbeatInterval);
+      delete (wsRef.current as any).heartbeatInterval;
+    }
+  }, []);
 
   // Speaker color generation
   const getSpeakerColor = useCallback((speakerId: number) => {
@@ -664,8 +760,10 @@ export const useTranscription = () => {
       micWsRef.current = ws;
       
       ws.onopen = () => {
+        console.log('Microphone WebSocket connected successfully');
         setMicTranscribing(true);
         setTranscriptionError('');
+        micWsReconnectAttemptsRef.current = 0; // Reset reconnection attempts
         
         // Send start transcription message
         ws.send(JSON.stringify({
@@ -674,6 +772,9 @@ export const useTranscription = () => {
         
         // Set up audio processing
         setupMicAudioProcessing(stream);
+        
+        // Set up heartbeat monitoring
+        setupWebSocketHeartbeat(micWsRef, 'mic');
       };
       
       ws.onmessage = (event) => {
@@ -700,8 +801,15 @@ export const useTranscription = () => {
       
       ws.onclose = (event) => {
         console.log('Microphone WebSocket disconnected:', event.code, event.reason);
+        cleanupWebSocketHeartbeat(micWsRef);
         setMicTranscribing(false);
-        if (event.code !== 1000) { // Not a normal closure
+        
+        // Only attempt reconnection if call is still active and not a normal closure
+        if (isCallActiveRef.current && event.code !== 1000) {
+          console.log('Call is still active, attempting to reconnect microphone WebSocket');
+          setTranscriptionError('Connection lost, attempting to reconnect...');
+          reconnectWebSocket('mic', stream);
+        } else if (event.code !== 1000) {
           setTranscriptionError('Connection lost unexpectedly');
         }
       };
@@ -716,7 +824,7 @@ export const useTranscription = () => {
       console.error('Error starting transcription:', error);
       setTranscriptionError('Failed to start transcription');
     }
-  }, [setupMicAudioProcessing]);
+  }, [setupMicAudioProcessing, setupWebSocketHeartbeat, cleanupWebSocketHeartbeat, reconnectWebSocket, addMicMessage]);
 
   const startSystemTranscription = useCallback(async (stream: MediaStream) => {
     try {
@@ -725,9 +833,11 @@ export const useTranscription = () => {
       systemWsRef.current = ws;
       
       ws.onopen = () => {
+        console.log('System WebSocket connected successfully');
         setSystemTranscribing(true);
         setSystemTranscriptionError('');
         setSystemSpeakers(new Map()); // Reset speakers for new session
+        systemWsReconnectAttemptsRef.current = 0; // Reset reconnection attempts
         
         // Send start transcription message with diarization setting
         ws.send(JSON.stringify({
@@ -742,6 +852,9 @@ export const useTranscription = () => {
         if (!diarizationEnabled) {
           startSystemBurstTimer();
         }
+        
+        // Set up heartbeat monitoring
+        setupWebSocketHeartbeat(systemWsRef, 'system');
       };
       
       ws.onmessage = (event) => {
@@ -775,8 +888,15 @@ export const useTranscription = () => {
       
       ws.onclose = (event) => {
         console.log('System WebSocket disconnected:', event.code, event.reason);
+        cleanupWebSocketHeartbeat(systemWsRef);
         setSystemTranscribing(false);
-        if (event.code !== 1000) { // Not a normal closure
+        
+        // Only attempt reconnection if call is still active and not a normal closure
+        if (isCallActiveRef.current && event.code !== 1000) {
+          console.log('Call is still active, attempting to reconnect system WebSocket');
+          setSystemTranscriptionError('Connection lost, attempting to reconnect...');
+          reconnectWebSocket('system', stream);
+        } else if (event.code !== 1000) {
           setSystemTranscriptionError('Connection lost unexpectedly');
         }
       };
@@ -791,7 +911,7 @@ export const useTranscription = () => {
       console.error('Error starting system transcription:', error);
       setSystemTranscriptionError('Failed to start system transcription');
     }
-  }, [diarizationEnabled, setupSystemAudioProcessing, addSystemMessage, startSystemBurstTimer]);
+  }, [diarizationEnabled, setupSystemAudioProcessing, addSystemMessage, startSystemBurstTimer, setupWebSocketHeartbeat, cleanupWebSocketHeartbeat, reconnectWebSocket]);
 
   // Recording functions
   const startSystemRecording = useCallback(async () => {
@@ -883,14 +1003,31 @@ export const useTranscription = () => {
       }
     }
     
-    // Stop system transcription
+    // Clean up WebSocket connection properly
     if (systemWsRef.current) {
-      systemWsRef.current.send(JSON.stringify({
-        type: 'stop_transcription'
-      }));
-      systemWsRef.current.close();
+      // Clean up heartbeat monitoring first
+      cleanupWebSocketHeartbeat(systemWsRef);
+      
+      // Send stop message if connection is still open
+      if (systemWsRef.current.readyState === WebSocket.OPEN) {
+        systemWsRef.current.send(JSON.stringify({
+          type: 'stop_transcription'
+        }));
+      }
+      
+      // Close connection
+      systemWsRef.current.close(1000, 'Call ended normally');
       systemWsRef.current = null;
     }
+    
+    // Clear reconnection timeout
+    if (systemWsReconnectTimeoutRef.current) {
+      clearTimeout(systemWsReconnectTimeoutRef.current);
+      systemWsReconnectTimeoutRef.current = null;
+    }
+    
+    // Reset reconnection attempts
+    systemWsReconnectAttemptsRef.current = 0;
     
     if (systemProcessorRef.current) {
       systemProcessorRef.current.disconnect();
@@ -906,7 +1043,7 @@ export const useTranscription = () => {
     stopSystemBurstTimer();
     
     setSystemTranscribing(false);
-  }, [stopSystemBurstTimer]);
+  }, [stopSystemBurstTimer, cleanupWebSocketHeartbeat]);
 
   const stopMicRecording = useCallback(() => {
     if (micMediaRecorderRef.current) {
@@ -919,14 +1056,31 @@ export const useTranscription = () => {
       }
     }
     
-    // Stop transcription and burst timer
+    // Clean up WebSocket connection properly
     if (micWsRef.current) {
-      micWsRef.current.send(JSON.stringify({
-        type: 'stop_transcription'
-      }));
-      micWsRef.current.close();
+      // Clean up heartbeat monitoring first
+      cleanupWebSocketHeartbeat(micWsRef);
+      
+      // Send stop message if connection is still open
+      if (micWsRef.current.readyState === WebSocket.OPEN) {
+        micWsRef.current.send(JSON.stringify({
+          type: 'stop_transcription'
+        }));
+      }
+      
+      // Close connection
+      micWsRef.current.close(1000, 'Call ended normally');
       micWsRef.current = null;
     }
+    
+    // Clear reconnection timeout
+    if (micWsReconnectTimeoutRef.current) {
+      clearTimeout(micWsReconnectTimeoutRef.current);
+      micWsReconnectTimeoutRef.current = null;
+    }
+    
+    // Reset reconnection attempts
+    micWsReconnectAttemptsRef.current = 0;
     
     if (micProcessorRef.current) {
       micProcessorRef.current.disconnect();
@@ -939,7 +1093,7 @@ export const useTranscription = () => {
     }
     
     stopMicTranscription();
-  }, []);
+  }, [cleanupWebSocketHeartbeat]);
 
   const stopMicTranscription = useCallback(() => {
     setMicTranscribing(false);
@@ -950,6 +1104,7 @@ export const useTranscription = () => {
     try {
       setIsRecording(true);
       setRecordingTime(0);
+      isCallActiveRef.current = true; // Mark call as active
       
     // Clear all data for fresh start
     console.log('🧹 Clearing all data for fresh start');
@@ -979,12 +1134,14 @@ export const useTranscription = () => {
     } catch (error) {
       console.error('Error starting unified recording:', error);
       setIsRecording(false);
+      isCallActiveRef.current = false; // Reset call active state on error
     }
   }, [startSystemRecording, startMicRecording, startDiscoAnalysisInterval]);
 
   const stopUnifiedRecording = useCallback(() => {
     console.log('Stopping unified recording...');
     setIsRecording(false);
+    isCallActiveRef.current = false; // Mark call as inactive
     
     // Stop system recording
     stopSystemRecording();
@@ -1044,19 +1201,47 @@ export const useTranscription = () => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Mark call as inactive
+      isCallActiveRef.current = false;
+      
+      // Clear all timers
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (systemBurstTimerRef.current) clearInterval(systemBurstTimerRef.current);
       if (discoAnalysisTimerRef.current) {
         clearTimeout(discoAnalysisTimerRef.current);
         clearInterval(discoAnalysisTimerRef.current);
       }
+      
+      // Clear reconnection timeouts
+      if (systemWsReconnectTimeoutRef.current) {
+        clearTimeout(systemWsReconnectTimeoutRef.current);
+      }
+      if (micWsReconnectTimeoutRef.current) {
+        clearTimeout(micWsReconnectTimeoutRef.current);
+      }
+      
+      // Stop media recorders
       if (systemMediaRecorderRef.current) systemMediaRecorderRef.current.stop();
       if (micMediaRecorderRef.current) micMediaRecorderRef.current.stop();
       
+      // Cleanup WebSocket connections
+      if (systemWsRef.current) {
+        cleanupWebSocketHeartbeat(systemWsRef);
+        if (systemWsRef.current.readyState === WebSocket.OPEN) {
+          systemWsRef.current.close(1000, 'Component unmounting');
+        }
+      }
+      if (micWsRef.current) {
+        cleanupWebSocketHeartbeat(micWsRef);
+        if (micWsRef.current.readyState === WebSocket.OPEN) {
+          micWsRef.current.close(1000, 'Component unmounting');
+        }
+      }
+      
       // Cleanup transcription
       stopMicTranscription();
-      if (systemWsRef.current) systemWsRef.current.close();
-      if (micWsRef.current) micWsRef.current.close();
+      
+      // Cleanup audio contexts
       if (micAudioContextRef.current && micAudioContextRef.current.state !== 'closed') {
         micAudioContextRef.current.close();
       }
@@ -1064,7 +1249,7 @@ export const useTranscription = () => {
         systemAudioContextRef.current.close();
       }
     };
-  }, [stopMicTranscription]);
+  }, [stopMicTranscription, cleanupWebSocketHeartbeat]);
 
   // Load screen sources on mount
   useEffect(() => {
