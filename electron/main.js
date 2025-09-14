@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, desktopCapturer } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === 'true';
 
@@ -39,7 +39,28 @@ function createWindow() {
   console.log('Loading URL:', startUrl);
   console.log('isDev:', isDev);
   
-  mainWindow.loadURL(startUrl);
+  // Wait for the dev server to be ready in development
+  if (isDev) {
+    const { spawn } = require('child_process');
+    
+    // Start the Next.js dev server if not already running
+    const checkServer = () => {
+      const http = require('http');
+      const req = http.get('http://localhost:3000', (res) => {
+        console.log('Dev server is ready');
+        mainWindow.loadURL(startUrl);
+      });
+      
+      req.on('error', (err) => {
+        console.log('Dev server not ready, waiting...');
+        setTimeout(checkServer, 2000);
+      });
+    };
+    
+    checkServer();
+  } else {
+    mainWindow.loadURL(startUrl);
+  }
 
   // Show window when ready to prevent visual flash
   mainWindow.once('ready-to-show', () => {
@@ -97,6 +118,30 @@ ipcMain.handle('set-content-protection', async (event, enable) => {
   } catch (error) {
     console.error('Error setting content protection:', error);
     return { success: false, error: error.message };
+  }
+});
+
+// Get desktop sources for screen capture
+ipcMain.handle('get-desktop-sources', async (event, options = {}) => {
+  try {
+    console.log('IPC: get-desktop-sources called');
+    
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 150, height: 150 },
+      ...options
+    });
+    
+    console.log(`Found ${sources.length} desktop sources`);
+    
+    return sources.map(source => ({
+      id: source.id,
+      name: source.name,
+      thumbnail: source.thumbnail.toDataURL()
+    }));
+  } catch (error) {
+    console.error('Error getting desktop sources:', error);
+    return [];
   }
 });
 
