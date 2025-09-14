@@ -1,4 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { CallManager } from '@/lib/call-management';
+import { AudioUploadService } from '@/lib/audio-upload';
+import { TranscriptEntry } from '@/lib/supabase';
 
 export interface TranscriptionMessage {
   id: string;
@@ -87,6 +90,10 @@ export const useTranscription = () => {
   const [systemAudioChunks, setSystemAudioChunks] = useState<Blob[]>([]);
   const [micAudioChunks, setMicAudioChunks] = useState<Blob[]>([]);
   
+  // Database integration state
+  const [currentCall, setCurrentCall] = useState<any>(null);
+  const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+  
   // WebSocket connection management
   const systemWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const micWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -95,6 +102,98 @@ export const useTranscription = () => {
   const maxReconnectAttempts = 5;
   const reconnectDelay = 2000; // 2 seconds
   const isCallActiveRef = useRef<boolean>(false);
+
+  // Start call with database integration
+  const startCall = useCallback(async (callData: {
+    title: string
+    company: string
+    meetingAgenda: string[]
+    meetingDescription?: string
+    attendeeEmails: string[]
+    transcriptAdminEmail: string
+  }, userId: string) => {
+    try {
+      // Create call in database
+      const newCall = await CallManager.createCall(callData, userId);
+      if (!newCall) {
+        console.error('Failed to create call in database');
+        return false;
+      }
+
+      setCurrentCall(newCall);
+      setTranscriptEntries([]);
+      
+      // Start recording and transcription
+      await startUnifiedRecording();
+      
+      return true;
+    } catch (error) {
+      console.error('Error starting call:', error);
+      return false;
+    }
+  }, []);
+
+  // Stop call with database integration
+  const stopCall = useCallback(async () => {
+    try {
+      if (!currentCall) return;
+
+      // Stop recording
+      await stopUnifiedRecording();
+      
+      // Upload audio files
+      if (systemAudioChunks.length > 0 || micAudioChunks.length > 0) {
+        const combinedBlob = await createCombinedAudioFile();
+        if (combinedBlob) {
+          const audioPath = await AudioUploadService.uploadAudioFile(
+            combinedBlob, 
+            currentCall.call_id, 
+            currentCall.owner_id
+          );
+          
+          if (audioPath) {
+            await CallManager.updateCallRecording(currentCall.call_id, audioPath);
+          }
+        }
+      }
+
+      // Generate AI summary from transcript
+      const transcriptText = transcriptEntries.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+      const aiSummary = transcriptText.length > 0 ? 
+        `Meeting Summary:\n\nKey Points:\n${transcriptText.slice(0, 500)}${transcriptText.length > 500 ? '...' : ''}` : 
+        'No transcript available';
+
+      // Update call with final data
+      await CallManager.updateCallTranscript(currentCall.call_id, transcriptEntries);
+      await CallManager.updateCallDisco(currentCall.call_id, discoData);
+      await CallManager.updateCallGenie(currentCall.call_id, [quickAnalysisData]);
+      await CallManager.updateCallSummary(currentCall.call_id, aiSummary);
+      await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
+      
+      // Clear state
+      setCurrentCall(null);
+      setTranscriptEntries([]);
+      
+    } catch (error) {
+      console.error('Error stopping call:', error);
+    }
+  }, [currentCall, transcriptEntries, recordingTime, discoData, quickAnalysisData, systemAudioChunks, micAudioChunks]);
+
+  // Add transcript entry to database
+  const addTranscriptEntry = useCallback(async (entry: Omit<TranscriptEntry, 'id' | 'edited_at'>) => {
+    if (!currentCall) return;
+
+    const transcriptEntry: TranscriptEntry = {
+      ...entry,
+      id: `entry_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      edited_at: new Date().toISOString()
+    };
+
+    const success = await CallManager.addTranscriptEntry(currentCall.call_id, transcriptEntry);
+    if (success) {
+      setTranscriptEntries(prev => [...prev, transcriptEntry]);
+    }
+  }, [currentCall]);
 
   // WebSocket connection health monitoring
   const checkWebSocketHealth = useCallback((wsRef: React.MutableRefObject<WebSocket | null>, type: 'system' | 'mic') => {
@@ -1543,6 +1642,10 @@ export const useTranscription = () => {
     isAnalyzingQuick,
     quickAnalysisError,
     
+    // Database integration state
+    currentCall,
+    transcriptEntries,
+    
     // Refs
     systemVideoRef,
     
@@ -1561,5 +1664,10 @@ export const useTranscription = () => {
     consolidateCallData,
     downloadAudioFile,
     createCombinedAudioFile,
+    
+    // Database integration actions
+    startCall,
+    stopCall,
+    addTranscriptEntry,
   };
 };

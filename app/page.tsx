@@ -43,6 +43,8 @@ import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/sidebar"
 import Link from "next/link"
 import { supabase, UserProfile } from "@/lib/supabase"
+import { UpcomingCallsManager, UpcomingCall } from "@/lib/upcoming-calls-manager"
+import { DocumentUploadService } from "@/lib/document-upload-service"
 
 const callsData = [
   {
@@ -645,6 +647,20 @@ const mockChatMessages = [
 
 export default function Dashboard() {
   const router = useRouter()
+  
+  // Initialize user and load upcoming calls
+  useEffect(() => {
+    const initializeUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUser(user)
+        // Load upcoming calls
+        const calls = await UpcomingCallsManager.getUserUpcomingCalls(user.id)
+        setUpcomingCalls(calls)
+      }
+    }
+    initializeUser()
+  }, [])
   useEffect(() => {
     if (typeof window !== "undefined") {
       const authed = localStorage.getItem("sally_auth") === "true"
@@ -942,7 +958,8 @@ Best regards,`,
   const [chatInput, setChatInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isCreateCallOpen, setIsCreateCallOpen] = useState(false)
-  const [upcomingCalls, setUpcomingCalls] = useState<any[]>([])
+  const [upcomingCalls, setUpcomingCalls] = useState<UpcomingCall[]>([])
+  const [user, setUser] = useState<any>(null)
   const [newCall, setNewCall] = useState({
     title: "",
     company: "",
@@ -950,6 +967,7 @@ Best regards,`,
     time: "",
     attendees: "",
     description: "",
+    agenda: [] as string[],
   })
   const [isRenameOpen, setIsRenameOpen] = useState(false)
   const [isLabelOpen, setIsLabelOpen] = useState(false)
@@ -958,6 +976,7 @@ Best regards,`,
   const [selectedCallForEdit, setSelectedCallForEdit] = useState<string | null>(null)
   const [renameTitle, setRenameTitle] = useState("")
   const [labelText, setLabelText] = useState("")
+  const [agendaInput, setAgendaInput] = useState("")
   const [labelColor, setLabelColor] = useState("blue")
   const [calls, setCalls] = useState(callsData)
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
@@ -1078,40 +1097,86 @@ Best regards,`,
     }, 4000)
   }
 
-  const handleCreateCall = () => {
+  const handleCloseCreateCallModal = () => {
+    setIsCreateCallOpen(false)
+    setNewCall({ title: "", company: "", date: "", time: "", attendees: "", description: "", agenda: [] })
+    setUploadedFiles([])
+    setAgendaInput("")
+  }
+
+  const refreshUpcomingCalls = async () => {
+    if (user) {
+      const calls = await UpcomingCallsManager.getUserUpcomingCalls(user.id)
+      setUpcomingCalls(calls)
+    }
+  }
+
+  const handleCreateCall = async () => {
     if (!newCall.title || !newCall.company || !newCall.date || !newCall.time) {
       alert("Please fill in all required fields")
       return
     }
 
-    const call = {
-      id: `upcoming_${Date.now()}`,
-      title: newCall.title,
-      company: newCall.company,
-      date: newCall.date,
-      time: newCall.time,
-      attendees: newCall.attendees
-        .split(",")
-        .map((a) => a.trim())
-        .filter((a) => a),
-      description: newCall.description,
-      documents: uploadedFiles.map((file) => ({
-        name: file.name,
-        type: file.type.includes("pdf") || file.type.includes("document") ? "document" : "email",
-        size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-        uploadedAt: new Date().toISOString().split("T")[0],
-      })),
-      isUpcoming: true,
+    if (!user) {
+      alert("User not authenticated")
+      return
     }
 
-    setUpcomingCalls([...upcomingCalls, call])
-    setNewCall({ title: "", company: "", date: "", time: "", attendees: "", description: "" })
-    setUploadedFiles([])
-    setIsCreateCallOpen(false)
+    try {
+      setIsLoading(true)
+
+      // Create the call in the database
+      const callData = {
+        title: newCall.title,
+        company: newCall.company,
+        date: newCall.date,
+        time: newCall.time,
+        attendees: newCall.attendees
+          .split(",")
+          .map((a) => a.trim())
+          .filter((a) => a),
+        description: newCall.description,
+        agenda: newCall.agenda,
+      }
+
+      const createdCall = await UpcomingCallsManager.createUpcomingCall(user.id, callData)
+      
+      if (!createdCall) {
+        alert("Failed to create call")
+        return
+      }
+
+      // Upload documents if any
+      if (uploadedFiles.length > 0) {
+        const uploadedDocuments = await DocumentUploadService.uploadDocuments(
+          uploadedFiles, 
+          user.id, 
+          createdCall.call_id
+        )
+        
+        // Update call with document information
+        await UpcomingCallsManager.addDocumentsToCall(createdCall.call_id, uploadedDocuments)
+      }
+
+      // Refresh upcoming calls list
+      const updatedCalls = await UpcomingCallsManager.getUserUpcomingCalls(user.id)
+      setUpcomingCalls(updatedCalls)
+
+      handleCloseCreateCallModal()
+      // Show success message
+      console.log("Call created successfully!")
+      
+    } catch (error) {
+      console.error('Error creating call:', error)
+      alert("Failed to create call. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleJoinCall = (call: any) => {
-    alert(`Opening Sally's call screen for: ${call.title}`)
+  const handleJoinCall = (call: UpcomingCall) => {
+    // Navigate to dashboard with call context
+    router.push(`/dashboard?callId=${call.call_id}`)
   }
 
   const handleRenameCall = (callId: string) => {
@@ -1623,7 +1688,7 @@ Best regards,`,
                 <AvatarFallback>
                   {userProfile?.full_name 
                     ? userProfile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
-                    : localStorage.getItem('sally_fullname')?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'
+                    : (typeof window !== 'undefined' ? localStorage.getItem('sally_fullname')?.split(' ').map(n => n[0]).join('').toUpperCase() : 'U') || 'U'
                   }
                 </AvatarFallback>
               </Avatar>
@@ -1654,13 +1719,40 @@ Best regards,`,
                         <h3 className="font-semibold text-gray-900 mb-1">{call.title}</h3>
                         <p className="text-sm text-gray-600 mb-2">{call.company}</p>
                         <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                          <span>{call.date}</span>
-                          <span>{call.time}</span>
+                          <span>{call.call_date}</span>
+                          <span>{call.call_time}</span>
                         </div>
-                        {call.attendees.length > 0 && (
+                        {call.attendees && call.attendees.length > 0 && (
                           <p className="text-xs text-gray-500 mb-3">Attendees: {call.attendees.join(", ")}</p>
                         )}
                         {call.description && <p className="text-sm text-gray-600 mb-3">{call.description}</p>}
+                        {call.agenda && call.agenda.length > 0 && (
+                          <div className="mb-3">
+                            <p className="text-xs font-medium text-gray-700 mb-1">Agenda:</p>
+                            <ul className="text-xs text-gray-600 space-y-1">
+                              {call.agenda.map((item, index) => (
+                                <li key={index} className="flex items-start">
+                                  <span className="text-gray-400 mr-2">•</span>
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {call.documents && call.documents.length > 0 && (
+                          <div className="mb-3">
+                            <p className="text-xs font-medium text-gray-700 mb-1">Documents:</p>
+                            <div className="space-y-1">
+                              {call.documents.map((doc, index) => (
+                                <div key={index} className="flex items-center gap-2">
+                                  <FileText className="h-3 w-3 text-gray-400" />
+                                  <span className="text-xs text-gray-600">{doc.name}</span>
+                                  <span className="text-xs text-gray-400">({(doc.size / 1024 / 1024).toFixed(1)} MB)</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <Button
@@ -1702,7 +1794,11 @@ Best regards,`,
               <h2 className="text-2xl font-semibold text-gray-900">Recent Calls</h2>
               <p className="text-gray-600 mt-1">Your latest sales calls and their completion status</p>
             </div>
-            <Button onClick={() => setIsCreateCallOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white">
+            <Button 
+              onClick={() => setIsCreateCallOpen(true)} 
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={!user}
+            >
               Create Call
             </Button>
           </div>
@@ -1953,12 +2049,12 @@ Best regards,`,
       {/* Create Call Modal */}
       {isCreateCallOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsCreateCallOpen(false)} />
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={handleCloseCreateCallModal} />
 
           <div className="relative bg-white rounded-lg shadow-2xl w-[500px] max-w-[90vw]">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">Create New Call</h2>
-              <Button variant="ghost" size="sm" onClick={() => setIsCreateCallOpen(false)}>
+              <Button variant="ghost" size="sm" onClick={handleCloseCreateCallModal}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -2015,9 +2111,64 @@ Best regards,`,
                 <Textarea
                   value={newCall.description}
                   onChange={(e) => setNewCall({ ...newCall, description: e.target.value })}
-                  placeholder="Enter call description or agenda"
+                  placeholder="Enter call description"
                   rows={3}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Meeting Agenda</label>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={agendaInput}
+                      onChange={(e) => setAgendaInput(e.target.value)}
+                      placeholder="Enter agenda item"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && agendaInput.trim()) {
+                          setNewCall({ ...newCall, agenda: [...newCall.agenda, agendaInput.trim()] })
+                          setAgendaInput("")
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (agendaInput.trim()) {
+                          setNewCall({ ...newCall, agenda: [...newCall.agenda, agendaInput.trim()] })
+                          setAgendaInput("")
+                        }
+                      }}
+                      disabled={!agendaInput.trim()}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  
+                  {newCall.agenda.length > 0 && (
+                    <div className="space-y-1">
+                      {newCall.agenda.map((item, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                          <span className="text-sm text-gray-700">{index + 1}. {item}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setNewCall({
+                                ...newCall,
+                                agenda: newCall.agenda.filter((_, i) => i !== index)
+                              })
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* File Upload Section */}
@@ -2069,10 +2220,19 @@ Best regards,`,
             </div>
 
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
-              <Button variant="outline" onClick={() => setIsCreateCallOpen(false)}>
+              <Button variant="outline" onClick={handleCloseCreateCallModal}>
                 Cancel
               </Button>
-              <Button onClick={handleCreateCall}>Create Call</Button>
+              <Button onClick={handleCreateCall} disabled={isLoading}>
+                {isLoading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Creating...
+                  </div>
+                ) : (
+                  "Create Call"
+                )}
+              </Button>
             </div>
           </div>
         </div>

@@ -31,6 +31,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Sidebar } from "@/components/sidebar"
 import { useTranscription } from "@/hooks/use-transcription"
+import { CallManager } from "@/lib/call-management"
+import { supabase } from "@/lib/supabase"
 
 // Mock data for the dashboard
 const mockTranscriptionData = {
@@ -214,11 +216,73 @@ export default function DashboardPage() {
     analyzeDisco,
     analyzeQuick,
     sendAiChat,
+    currentCall,
+    transcriptEntries,
+    startCall,
+    stopCall,
+    addTranscriptEntry,
   } = useTranscription()
 
   // Get dynamic DISCO panel data
   const panels = getDiscoPanelData(discoData)
   
+  // User state for database operations
+  const [user, setUser] = useState<any>(null)
+  
+  // Initialize user
+  useEffect(() => {
+    const initializeUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUser(user)
+      }
+    }
+    initializeUser()
+  }, [])
+
+  // Enhanced start call handler that creates a database record
+  const handleStartCall = async () => {
+    if (!user) {
+      console.error('No user found')
+      return
+    }
+
+    try {
+      // Create call record in database and start recording
+      const callData = {
+        title: `Meeting - ${new Date().toLocaleDateString()}`,
+        company: 'Client Company',
+        meetingAgenda: ['General Discussion'],
+        meetingDescription: 'Live meeting transcription',
+        attendeeEmails: [],
+        transcriptAdminEmail: user.email || ''
+      }
+
+      const success = await startCall(callData, user.id)
+      if (success) {
+        console.log('Call started successfully')
+      } else {
+        console.error('Failed to start call')
+      }
+    } catch (error) {
+      console.error('Error starting call:', error)
+    }
+  }
+
+  // Enhanced stop call handler that saves all data
+  const handleStopCall = async () => {
+    try {
+      // Stop call and save all data
+      const success = await stopCall()
+      if (success) {
+        console.log('Call stopped and data saved successfully')
+      } else {
+        console.error('Failed to stop call properly')
+      }
+    } catch (error) {
+      console.error('Error stopping call:', error)
+    }
+  }
 
   const togglePanelVisibility = (panelId: string) => {
     // For now, we'll keep the panels always visible since they're dynamic
@@ -417,8 +481,8 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2">
                   {!isRecording ? (
                     <Button 
-                      onClick={startUnifiedRecording}
-                      disabled={!selectedScreenSource}
+                      onClick={handleStartCall}
+                      disabled={!selectedScreenSource || !user}
                       className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium"
                     >
                       <Play className="h-4 w-4 mr-2" />
@@ -426,7 +490,7 @@ export default function DashboardPage() {
                     </Button>
                   ) : (
                     <Button 
-                      onClick={stopUnifiedRecording}
+                      onClick={handleStopCall}
                       variant="destructive"
                       className="px-4 py-2 text-sm font-medium"
                     >
@@ -813,6 +877,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+
 
           {/* Footer Controls */}
           <div className="mt-8 flex items-center justify-between flex-shrink-0">
