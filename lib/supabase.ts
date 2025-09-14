@@ -30,17 +30,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Database types
 export interface UserProfile {
-  id: string
   username: string
-  fullName: string
-  dateJoined: string
+  full_name: string
+  date_joined: string
   email: string
   organisation: string
   uid: string
   purpose: string
-  outlookConnected: boolean
-  gmailConnected: boolean
-  callsTaken: number
-  createdAt?: string
-  updatedAt?: string
+  outlook_connected: boolean
+  gmail_connected: boolean
+  calls_taken: number
+  created_at?: string
+  updated_at?: string
 }

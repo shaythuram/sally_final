@@ -384,6 +384,10 @@ export default function DashboardPage() {
                     <div className="text-gray-500 font-mono">
                       {formatTime(recordingTime)}
                     </div>
+                    <div className="flex items-center gap-1 text-xs text-gray-500">
+                      <Mic className="h-3 w-3" />
+                      <span>Audio</span>
+                    </div>
                   </div>
                 )}
                 

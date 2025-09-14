@@ -1,61 +1,37 @@
-"use client"
-
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Progress } from "@/components/ui/progress"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { supabase, UserProfile } from "@/lib/supabase"
-
-interface SignupProgress {
-  step: number
-  total: number
-  message: string
-}
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase, UserProfile } from '@/lib/supabase'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+import { Badge } from '@/components/ui/badge'
+import { CheckCircle, Mail, User, Building, Target, ArrowRight, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [tab, setTab] = useState<"login" | "signup">("login")
-  const [username, setUsername] = useState("")
-  const [fullName, setFullName] = useState("")
-  const [organisation, setOrganisation] = useState("")
-  const [purpose, setPurpose] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  
-  // Progress modal state
-  const [showProgress, setShowProgress] = useState(false)
-  const [progress, setProgress] = useState<SignupProgress>({
-    step: 0,
-    total: 4,
-    message: ""
-  })
+  const [isLogin, setIsLogin] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [username, setUsername] = useState('')
+  const [organisation, setOrganisation] = useState('')
+  const [purpose, setPurpose] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [showProgress, setShowProgress] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [progressMessage, setProgressMessage] = useState('')
 
   const updateProgress = (step: number, message: string) => {
-    setProgress({
-      step,
-      total: 4,
-      message
-    })
+    setProgress((step / 4) * 100)
+    setProgressMessage(message)
   }
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validation
-    if (password !== confirmPassword) {
-      alert("Passwords do not match")
-      return
-    }
-
-    if (!username || !fullName || !organisation || !purpose || !email || !password) {
+    if (!email || !password || !fullName || !username || !organisation || !purpose) {
       alert("Please fill in all fields")
       return
     }
@@ -64,7 +40,7 @@ export default function LoginPage() {
     setShowProgress(true)
 
     try {
-      // Step 1: Create user account in Supabase Auth
+      // Step 1: Create auth user
       updateProgress(1, "Creating your account...")
       
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -73,7 +49,7 @@ export default function LoginPage() {
         options: {
           data: {
             username,
-            fullName,
+            full_name: fullName,
             organisation,
             purpose
           }
@@ -96,17 +72,17 @@ export default function LoginPage() {
       // Step 3: Save user details to database
       updateProgress(3, "Saving your information...")
       
-      const userProfile: Omit<UserProfile, 'id'> = {
+      const userProfile: UserProfile = {
         username,
-        fullName,
-        dateJoined: new Date().toISOString(),
+        full_name,
+        date_joined: new Date().toISOString(),
         email,
         organisation,
         uid,
         purpose,
-        outlookConnected: false,
-        gmailConnected: false,
-        callsTaken: 0
+        outlook_connected: false,
+        gmail_connected: false,
+        calls_taken: 0
       }
 
       const { error: profileError } = await supabase
@@ -166,14 +142,14 @@ export default function LoginPage() {
         // Get user profile to save name and email to localStorage [[memory:8342785]]
         const { data: profile } = await supabase
           .from('user_profiles')
-          .select('fullName, email')
+          .select('full_name, email')
           .eq('uid', data.user.id)
           .single()
 
         if (typeof window !== "undefined") {
           localStorage.setItem("sally_auth", "true")
           if (profile) {
-            localStorage.setItem("sally_fullname", profile.fullName)
+            localStorage.setItem("sally_fullname", profile.full_name)
             localStorage.setItem("sally_email", profile.email)
           }
         }
@@ -189,211 +165,283 @@ export default function LoginPage() {
   }
 
   const handleSocial = (provider: "gmail" | "outlook") => {
-    // Dummy social auth
-    if (typeof window !== "undefined") {
-      localStorage.setItem("sally_auth", "true")
-      localStorage.setItem("sally_provider", provider)
-    }
-    router.replace("/")
+    alert(`${provider} login coming soon!`)
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-gray-900 rounded-xl flex items-center justify-center mx-auto mb-3">
-            <span className="text-white font-bold">S</span>
-          </div>
-          <h1 className="text-2xl font-bold">SALLY</h1>
-          <p className="text-sm text-gray-600">AI-powered dashboard</p>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-center">{tab === "login" ? "Sign in" : "Create account"}</CardTitle>
+  if (showProgress) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold text-gray-900">
+              Setting up your account
+            </CardTitle>
+            <CardDescription className="text-gray-600">
+              Please wait while we create your Sally profile...
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full">
-              <TabsList className="grid grid-cols-2 w-full mb-4">
-                <TabsTrigger value="login">Sign In</TabsTrigger>
-                <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              </TabsList>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Progress</span>
+                <span className="text-gray-900 font-medium">{Math.round(progress)}%</span>
+              </div>
+              <Progress value={progress} className="w-full" />
+            </div>
+            
+            <div className="text-center">
+              <div className="inline-flex items-center gap-2 text-blue-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm font-medium">{progressMessage}</span>
+              </div>
+            </div>
 
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-email">Email</Label>
-                    <Input 
-                      id="login-email" 
-                      type="email" 
-                      value={email} 
-                      onChange={(e) => setEmail(e.target.value)} 
-                      required 
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Password</Label>
-                    <Input 
-                      id="login-password" 
-                      type="password" 
-                      value={password} 
-                      onChange={(e) => setPassword(e.target.value)} 
-                      required 
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Signing in..." : "Sign In"}
-                  </Button>
-                </form>
-                <div className="relative my-4">
-                  <div className="border-t" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="bg-white px-2 text-xs text-gray-500">or continue with</span>
-                  </div>
+            <div className="space-y-3">
+              {progress >= 25 && (
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="text-sm">Account created</span>
                 </div>
-                <div className="grid grid-cols-1 gap-2">
-                  <Button type="button" variant="outline" onClick={() => handleSocial("gmail")} disabled={isLoading}>
-                    Sign in with Gmail
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => handleSocial("outlook")} disabled={isLoading}>
-                    Sign in with Outlook
-                  </Button>
+              )}
+              {progress >= 50 && (
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="text-sm">Profile setup</span>
                 </div>
-              </TabsContent>
-
-              <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-username">Username</Label>
-                      <Input 
-                        id="signup-username" 
-                        value={username} 
-                        onChange={(e) => setUsername(e.target.value)} 
-                        required 
-                        disabled={isLoading}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-fullname">Full name</Label>
-                      <Input 
-                        id="signup-fullname" 
-                        value={fullName} 
-                        onChange={(e) => setFullName(e.target.value)} 
-                        required 
-                        disabled={isLoading}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-organisation">Organisation</Label>
-                    <Input 
-                      id="signup-organisation" 
-                      value={organisation} 
-                      onChange={(e) => setOrganisation(e.target.value)} 
-                      required 
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Purpose</Label>
-                    <Select value={purpose} onValueChange={setPurpose} disabled={isLoading}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your purpose" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sales">Sales calls and demos</SelectItem>
-                        <SelectItem value="success">Customer success & account reviews</SelectItem>
-                        <SelectItem value="support">Customer support / incident reviews</SelectItem>
-                        <SelectItem value="recruiting">Recruiting interviews</SelectItem>
-                        <SelectItem value="product">Product discovery / research</SelectItem>
-                        <SelectItem value="internal">Internal team meetings</SelectItem>
-                        <SelectItem value="compliance">Compliance / security reviews</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
-                    <Input 
-                      id="signup-email" 
-                      type="email" 
-                      value={email} 
-                      onChange={(e) => setEmail(e.target.value)} 
-                      required 
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
-                    <Input 
-                      id="signup-password" 
-                      type="password" 
-                      value={password} 
-                      onChange={(e) => setPassword(e.target.value)} 
-                      required 
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-confirm">Confirm Password</Label>
-                    <Input 
-                      id="signup-confirm" 
-                      type="password" 
-                      value={confirmPassword} 
-                      onChange={(e) => setConfirmPassword(e.target.value)} 
-                      required 
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Creating Account..." : "Create Account"}
-                  </Button>
-                </form>
-                <div className="relative my-4">
-                  <div className="border-t" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="bg-white px-2 text-xs text-gray-500">or sign up with</span>
-                  </div>
+              )}
+              {progress >= 75 && (
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="text-sm">Information saved</span>
                 </div>
-                <div className="grid grid-cols-1 gap-2">
-                  <Button type="button" variant="outline" onClick={() => handleSocial("gmail")} disabled={isLoading}>
-                    Sign up with Gmail
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => handleSocial("outlook")} disabled={isLoading}>
-                    Sign up with Outlook
-                  </Button>
+              )}
+              {progress >= 100 && (
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="text-sm">Welcome to Sally!</span>
                 </div>
-              </TabsContent>
-            </Tabs>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
+    )
+  }
 
-      {/* Progress Modal */}
-      <Dialog open={showProgress} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Creating Your Account</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Progress</span>
-                <span>{progress.step} of {progress.total}</span>
-              </div>
-              <Progress value={(progress.step / progress.total) * 100} className="w-full" />
-            </div>
-            <p className="text-sm text-gray-600 text-center">
-              {progress.message}
-            </p>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
+            <span className="text-2xl font-bold text-white">S</span>
           </div>
-        </DialogContent>
-      </Dialog>
+          <CardTitle className="text-2xl font-bold text-gray-900">
+            {isLogin ? 'Welcome back' : 'Create your account'}
+          </CardTitle>
+          <CardDescription className="text-gray-600">
+            {isLogin 
+              ? 'Sign in to your Sally dashboard' 
+              : 'Join Sally and start managing your calls'
+            }
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          {isLogin ? (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
+              
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleSignup} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name
+                </label>
+                <Input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Username
+                </label>
+                <Input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Choose a username"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Organisation
+                </label>
+                <Input
+                  type="text"
+                  value={organisation}
+                  onChange={(e) => setOrganisation(e.target.value)}
+                  placeholder="Your company or organization"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Purpose
+                </label>
+                <Input
+                  type="text"
+                  value={purpose}
+                  onChange={(e) => setPurpose(e.target.value)}
+                  placeholder="How will you use Sally?"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a password"
+                  required
+                />
+              </div>
+              
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating account...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
+              </Button>
+            </form>
+          )}
+          
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white text-gray-500">Or continue with</span>
+              </div>
+            </div>
+            
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                onClick={() => handleSocial('gmail')}
+                className="w-full"
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                Gmail
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleSocial('outlook')}
+                className="w-full"
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                Outlook
+              </Button>
+            </div>
+          </div>
+          
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+            >
+              {isLogin ? (
+                <>
+                  Don't have an account?{' '}
+                  <span className="inline-flex items-center gap-1">
+                    Sign up <ArrowRight className="h-3 w-3" />
+                  </span>
+                </>
+              ) : (
+                <>
+                  Already have an account?{' '}
+                  <span className="inline-flex items-center gap-1">
+                    Sign in <ArrowRight className="h-3 w-3" />
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
-
-

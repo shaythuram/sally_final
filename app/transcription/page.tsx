@@ -25,6 +25,7 @@ import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useTranscription } from "@/hooks/use-transcription"
+import { Sidebar } from "@/components/sidebar"
 
 export default function TranscriptionPage() {
   const {
@@ -67,39 +68,40 @@ export default function TranscriptionPage() {
   };
 
   return (
-    <div className="h-screen bg-slate-50 flex flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200 flex-shrink-0">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">S</span>
+    <Sidebar>
+      <div className="h-screen bg-slate-50 flex flex-col">
+        {/* Header */}
+        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200 flex-shrink-0">
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">S</span>
+                  </div>
+                  <h1 className="text-xl font-semibold">Sally</h1>
                 </div>
-                <h1 className="text-xl font-semibold">Sally</h1>
+                <div className="text-sm text-muted-foreground">
+                  Live Transcription
+                </div>
               </div>
-              <div className="text-sm text-muted-foreground">
-                Live Transcription
-              </div>
-            </div>
 
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`} />
-                <span className="text-muted-foreground">
-                  {isRecording ? 'Recording' : 'Stopped'}
-                </span>
-              </div>
-              {isRecording && (
-                <div className="text-lg font-mono font-semibold text-gray-900">
-                  {formatTime(recordingTime)}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`} />
+                  <span className="text-muted-foreground">
+                    {isRecording ? 'Recording' : 'Stopped'}
+                  </span>
                 </div>
-              )}
+                {isRecording && (
+                  <div className="text-lg font-mono font-semibold text-gray-900">
+                    {formatTime(recordingTime)}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="px-6 py-6 flex-1 flex flex-col">
@@ -366,5 +368,6 @@ export default function TranscriptionPage() {
         )}
       </div>
     </div>
+    </Sidebar>
   )
 }

@@ -1,18 +1,17 @@
 -- Create user_profiles table
 CREATE TABLE user_profiles (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  uid UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT NOT NULL UNIQUE,
-  fullName TEXT NOT NULL,
-  dateJoined TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  full_name TEXT NOT NULL,
+  date_joined TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   email TEXT NOT NULL,
   organisation TEXT NOT NULL,
-  uid UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   purpose TEXT NOT NULL,
-  outlookConnected BOOLEAN DEFAULT FALSE,
-  gmailConnected BOOLEAN DEFAULT FALSE,
-  callsTaken INTEGER DEFAULT 0,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  outlook_connected BOOLEAN DEFAULT FALSE,
+  gmail_connected BOOLEAN DEFAULT FALSE,
+  calls_taken INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Enable Row Level Security
@@ -34,11 +33,11 @@ ON user_profiles
 FOR UPDATE 
 USING (auth.uid() = uid);
 
--- Create updatedAt trigger
+-- Create updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-  NEW.updatedAt = NOW();
+  NEW.updated_at = NOW();
   RETURN NEW;
 END;
 $$ language 'plpgsql';

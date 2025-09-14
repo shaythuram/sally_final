@@ -83,6 +83,10 @@ export const useTranscription = () => {
   const systemBurstTimerRef = useRef<NodeJS.Timeout | null>(null);
   const discoAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Audio recording state
+  const [systemAudioChunks, setSystemAudioChunks] = useState<Blob[]>([]);
+  const [micAudioChunks, setMicAudioChunks] = useState<Blob[]>([]);
+  
   // WebSocket connection management
   const systemWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const micWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -192,6 +196,54 @@ export const useTranscription = () => {
     }
     return systemSpeakers.get(speakerId);
   }, [systemSpeakers]);
+
+  // Audio download functionality
+  const downloadAudioFile = useCallback((audioBlob: Blob, filename: string) => {
+    try {
+      const url = URL.createObjectURL(audioBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      console.log(`✅ Downloaded audio file: ${filename}`);
+    } catch (error) {
+      console.error(`❌ Error downloading audio file ${filename}:`, error);
+    }
+  }, []);
+
+  // Create and download combined audio file
+  const createCombinedAudioFile = useCallback(async () => {
+    try {
+      if (systemAudioChunks.length === 0 && micAudioChunks.length === 0) {
+        console.log('⚠️ No audio chunks to combine');
+        return;
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      
+      // Download system audio if available
+      if (systemAudioChunks.length > 0) {
+        const systemBlob = new Blob(systemAudioChunks, { type: 'audio/webm' });
+        downloadAudioFile(systemBlob, `system_audio_${timestamp}.webm`);
+      }
+      
+      // Download microphone audio if available
+      if (micAudioChunks.length > 0) {
+        const micBlob = new Blob(micAudioChunks, { type: 'audio/webm' });
+        downloadAudioFile(micBlob, `microphone_audio_${timestamp}.webm`);
+      }
+
+      // For now, we'll download separate files. In the future, we could implement audio mixing
+      // to create a single combined file with both system and microphone audio
+      console.log('✅ Audio files downloaded successfully');
+      
+    } catch (error) {
+      console.error('❌ Error creating combined audio file:', error);
+    }
+  }, [systemAudioChunks, micAudioChunks, downloadAudioFile]);
 
   // DISCO Analysis function
   const analyzeDisco = useCallback(async (conversation: string) => {
@@ -951,6 +1003,23 @@ export const useTranscription = () => {
       });
       systemMediaRecorderRef.current = mediaRecorder;
 
+      // Collect audio chunks for recording
+      const audioChunks: Blob[] = [];
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+          setSystemAudioChunks(prev => [...prev, event.data]);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        // Create audio blob and download
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `system_audio_${timestamp}.webm`;
+        downloadAudioFile(audioBlob, filename);
+      };
+
       mediaRecorder.start();
 
       // Start real-time transcription for system audio
@@ -978,6 +1047,23 @@ export const useTranscription = () => {
         mimeType: 'audio/webm;codecs=opus'
       });
       micMediaRecorderRef.current = mediaRecorder;
+
+      // Collect audio chunks for recording
+      const audioChunks: Blob[] = [];
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+          setMicAudioChunks(prev => [...prev, event.data]);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        // Create audio blob and download
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `microphone_audio_${timestamp}.webm`;
+        downloadAudioFile(audioBlob, filename);
+      };
 
       mediaRecorder.start();
 
@@ -1106,15 +1192,19 @@ export const useTranscription = () => {
       setRecordingTime(0);
       isCallActiveRef.current = true; // Mark call as active
       
-    // Clear all data for fresh start
-    console.log('🧹 Clearing all data for fresh start');
-    setAllMessages([]);
-    setSystemSpeakers(new Map());
-    setDiscoData({});
-    setDiscoError('');
-    setRawDiscoResponse(null);
-    // Keep Genie data persistent - don't clear quickAnalysisData
-    setQuickAnalysisError('');
+      // Clear all data for fresh start
+      console.log('🧹 Clearing all data for fresh start');
+      setAllMessages([]);
+      setSystemSpeakers(new Map());
+      setDiscoData({});
+      setDiscoError('');
+      setRawDiscoResponse(null);
+      // Keep Genie data persistent - don't clear quickAnalysisData
+      setQuickAnalysisError('');
+      
+      // Clear audio chunks for new recording
+      setSystemAudioChunks([]);
+      setMicAudioChunks([]);
       
       // Start system recording
       await startSystemRecording();
@@ -1303,7 +1393,7 @@ export const useTranscription = () => {
     return holisticView;
   }, [allMessages, recordingTime, systemSpeakers, discoData, rawDiscoResponse, discoError, isAnalyzingDisco, quickAnalysisData, quickAnalysisError, isAnalyzingQuick, sendToPostCallActions]);
 
-  const stopUnifiedRecording = useCallback(() => {
+  const stopUnifiedRecording = useCallback(async () => {
     console.log('Stopping unified recording...');
     setIsRecording(false);
     isCallActiveRef.current = false; // Mark call as inactive
@@ -1322,6 +1412,9 @@ export const useTranscription = () => {
     
     // Stop DISCO analysis interval
     stopDiscoAnalysisInterval();
+    
+    // Download recorded audio files
+    await createCombinedAudioFile();
     
     // CONSOLIDATE AND LOG ALL CALL DATA
     const consolidatedData = consolidateCallData();
@@ -1466,5 +1559,7 @@ export const useTranscription = () => {
     analyzeQuick,
     sendAiChat,
     consolidateCallData,
+    downloadAudioFile,
+    createCombinedAudioFile,
   };
 };

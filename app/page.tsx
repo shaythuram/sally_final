@@ -738,17 +738,16 @@ export default function Dashboard() {
           const fullName = localStorage.getItem('sally_fullname') || 'User'
           const email = localStorage.getItem('sally_email') || 'user@example.com'
           setUserProfile({
-            id: user.id,
             username: user.user_metadata?.username || 'user',
-            fullName: fullName,
-            dateJoined: user.created_at,
+            full_name: fullName,
+            date_joined: user.created_at,
             email: email,
             organisation: user.user_metadata?.organisation || '',
             uid: user.id,
             purpose: user.user_metadata?.purpose || '',
-            outlookConnected: false,
-            gmailConnected: false,
-            callsTaken: 0
+            outlook_connected: false,
+            gmail_connected: false,
+            calls_taken: 0
           })
         } else {
           setUserProfile(profile)
@@ -1622,8 +1621,8 @@ Best regards,`,
               }}>
                 <AvatarImage src="/placeholder-user.jpg" />
                 <AvatarFallback>
-                  {userProfile?.fullName 
-                    ? userProfile.fullName.split(' ').map(n => n[0]).join('').toUpperCase()
+                  {userProfile?.full_name 
+                    ? userProfile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
                     : localStorage.getItem('sally_fullname')?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'
                   }
                 </AvatarFallback>
@@ -3729,7 +3728,7 @@ Best regards,`,
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                         <Input 
-                          defaultValue={userProfile?.fullName || ''} 
+                          defaultValue={userProfile?.full_name || ''} 
                           className="w-full" 
                           readOnly 
                         />
