@@ -2,6 +2,9 @@ const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === 'true';
 
+// Load environment variables
+require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
+
 let mainWindow;
 
 function createWindow() {
@@ -18,6 +21,10 @@ function createWindow() {
       webSecurity: true,
       allowRunningInsecureContent: false,
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: [
+        `--supabase-url=${process.env.NEXT_PUBLIC_SUPABASE_URL || ''}`,
+        `--supabase-key=${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''}`
+      ],
     },
     icon: path.join(__dirname, '../public/placeholder-logo.png'),
     titleBarStyle: 'default',

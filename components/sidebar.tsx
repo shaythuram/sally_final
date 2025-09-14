@@ -23,7 +23,7 @@ const navigation = [
   },
   {
     name: "Calls",
-    href: "/calls",
+    href: "/",
     icon: Phone,
   },
   {

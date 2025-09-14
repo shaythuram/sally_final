@@ -1,4 +1,6 @@
 "use client"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import {
   Search,
   HelpCircle,
@@ -40,6 +42,7 @@ import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/sidebar"
 import Link from "next/link"
+import { supabase, UserProfile } from "@/lib/supabase"
 
 const callsData = [
   {
@@ -641,6 +644,15 @@ const mockChatMessages = [
 ]
 
 export default function Dashboard() {
+  const router = useRouter()
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const authed = localStorage.getItem("sally_auth") === "true"
+      if (!authed) {
+        router.replace("/login")
+      }
+    }
+  }, [router])
   const [isFullCalendarView, setIsFullCalendarView] = useState(false)
   const [isAddEventOpen, setIsAddEventOpen] = useState(false)
   const [newEvent, setNewEvent] = useState({
@@ -651,8 +663,14 @@ export default function Dashboard() {
     description: "",
   })
   const [isUserSettingsOpen, setIsUserSettingsOpen] = useState(false)
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false)
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
   const [selectedEmailAction, setSelectedEmailAction] = useState<string | null>(null)
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([])
+  const [emailSubject, setEmailSubject] = useState<string>("")
+  const [emailBody, setEmailBody] = useState<string>("")
+  const [toInput, setToInput] = useState("")
 
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [isOutlookConnected, setIsOutlookConnected] = useState(false)
@@ -700,6 +718,47 @@ export default function Dashboard() {
   const handleConnectGoogle = () => {
     setIsGoogleConnected(true)
     alert("Google calendar connected successfully!")
+  }
+
+  const fetchUserProfile = async () => {
+    setIsLoadingProfile(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        const { data: profile, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('uid', user.id)
+          .single()
+
+        if (error) {
+          console.error('Error fetching user profile:', error)
+          // Fallback to localStorage data
+          const fullName = localStorage.getItem('sally_fullname') || 'User'
+          const email = localStorage.getItem('sally_email') || 'user@example.com'
+          setUserProfile({
+            id: user.id,
+            username: user.user_metadata?.username || 'user',
+            fullName: fullName,
+            dateJoined: user.created_at,
+            email: email,
+            organisation: user.user_metadata?.organisation || '',
+            uid: user.id,
+            purpose: user.user_metadata?.purpose || '',
+            outlookConnected: false,
+            gmailConnected: false,
+            callsTaken: 0
+          })
+        } else {
+          setUserProfile(profile)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error)
+    } finally {
+      setIsLoadingProfile(false)
+    }
   }
 
   const handleAddEvent = () => {
@@ -1299,11 +1358,22 @@ Best regards,`,
 
   const handleEmailActionClick = (action: string) => {
     setSelectedEmailAction(action)
+    const template = emailDrafts[action as keyof typeof emailDrafts]
+    if (template) {
+      setEmailSubject(template.subject)
+      setEmailBody(template.body)
+    }
   }
 
   const handleSendDraftEmail = () => {
+    const toList = selectedRecipients.length ? selectedRecipients : ["recipient@example.com"]
+    console.log("Sending email", { to: toList, subject: emailSubject, body: emailBody })
     alert("Email sent successfully!")
     setSelectedEmailAction(null)
+    setSelectedRecipients([])
+    setEmailSubject("")
+    setEmailBody("")
+    setToInput("")
     setIsEmailModalOpen(false)
   }
 
@@ -1546,9 +1616,17 @@ Best regards,`,
               <Button variant="ghost" size="sm">
                 <HelpCircle className="h-4 w-4" />
               </Button>
-              <Avatar className="h-8 w-8 cursor-pointer" onClick={() => setIsUserSettingsOpen(true)}>
+              <Avatar className="h-8 w-8 cursor-pointer" onClick={() => {
+                setIsUserSettingsOpen(true)
+                fetchUserProfile()
+              }}>
                 <AvatarImage src="/placeholder-user.jpg" />
-                <AvatarFallback>AK</AvatarFallback>
+                <AvatarFallback>
+                  {userProfile?.fullName 
+                    ? userProfile.fullName.split(' ').map(n => n[0]).join('').toUpperCase()
+                    : localStorage.getItem('sally_fullname')?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'
+                  }
+                </AvatarFallback>
               </Avatar>
             </div>
           </div>
@@ -3213,7 +3291,7 @@ Best regards,`,
 
       {isEmailModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">Send Follow-up Email</h2>
               <button onClick={() => setIsEmailModalOpen(false)} className="text-gray-400 hover:text-gray-600">
@@ -3221,7 +3299,10 @@ Best regards,`,
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[60vh]">
+                {/* Left: actions and recipients with own scroll */}
+                <div className="space-y-6 overflow-y-auto pr-1">
               {/* Suggested Actions */}
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-3">Suggested Actions</h3>
@@ -3255,25 +3336,90 @@ Best regards,`,
                       <div className="text-sm text-gray-500">{recipient.role}</div>
                     </div>
                   ))}
+                    </div>
                 </div>
               </div>
 
-              {/* Email Preview */}
-              {selectedEmailAction && (
-                <div>
+                {/* Right: preview pane (editable with recipients) */}
+                <div className="overflow-y-auto pl-1">
                   <h3 className="text-lg font-medium text-gray-900 mb-3">Email Preview</h3>
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="mb-2">
-                      <div className="font-medium text-gray-900">Subject:</div>
-                      <div className="text-gray-700">{emailDrafts[selectedEmailAction].subject}</div>
-                    </div>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 min-h-[300px] space-y-3">
+                    {!selectedEmailAction && (
+                      <div className="text-sm text-gray-500">Select a suggested action to start composing.</div>
+                    )}
+                    {/* To (recipients) */}
                     <div>
-                      <div className="font-medium text-gray-900">Body:</div>
-                      <div className="text-gray-700 whitespace-pre-line">{emailDrafts[selectedEmailAction].body}</div>
+                      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">To</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {selectedRecipients.map((email) => (
+                          <span key={email} className="inline-flex items-center gap-1 text-sm bg-white border border-gray-200 rounded px-2 py-1">
+                            {email}
+                            <button
+                              onClick={() => setSelectedRecipients(selectedRecipients.filter((e) => e !== email))}
+                              className="text-gray-400 hover:text-gray-600"
+                              aria-label={`Remove ${email}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <Input
+                          value={toInput}
+                          onChange={(e) => setToInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ',') {
+                              e.preventDefault()
+                              const val = toInput.trim().replace(/,$/, '')
+                              if (val && /.+@.+\..+/.test(val)) {
+                                if (!selectedRecipients.includes(val)) {
+                                  setSelectedRecipients([...selectedRecipients, val])
+                                }
+                                setToInput("")
+                              }
+                            }
+                          }}
+                          placeholder="Type email and press Enter"
+                          className="w-auto min-w-[220px] bg-white"
+                        />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="outline" size="sm">Add from suggestions</Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="max-h-64 overflow-auto">
+                            {suggestedRecipients.map((r) => (
+                              <DropdownMenuItem
+                                key={r.email}
+                                onClick={() => {
+                                  if (!selectedRecipients.includes(r.email)) {
+                                    setSelectedRecipients([...selectedRecipients, r.email])
+                                  }
+                                }}
+                              >
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900">{r.name}</span>
+                                  <span className="text-xs text-gray-600">{r.email}</span>
+                                </div>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+
+                    {/* Subject */}
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Subject</div>
+                      <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Subject" />
+                    </div>
+
+                    {/* Body */}
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Body</div>
+                      <Textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={12} className="bg-white" />
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
@@ -3574,20 +3720,62 @@ Best regards,`,
                     <User className="h-5 w-5" />
                     Profile Information
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                      <Input defaultValue="Akshith Kumar" className="w-full" />
+                  {isLoadingProfile ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="text-sm text-gray-500">Loading profile...</div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                      <Input defaultValue="akshith.kumar" className="w-full" />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                        <Input 
+                          defaultValue={userProfile?.fullName || ''} 
+                          className="w-full" 
+                          readOnly 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                        <Input 
+                          defaultValue={userProfile?.username || ''} 
+                          className="w-full" 
+                          readOnly 
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <Input 
+                          defaultValue={userProfile?.email || ''} 
+                          className="w-full" 
+                          readOnly 
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Organisation</label>
+                        <Input 
+                          defaultValue={userProfile?.organisation || ''} 
+                          className="w-full" 
+                          readOnly 
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
+                        <Input 
+                          defaultValue={userProfile?.purpose || ''} 
+                          className="w-full" 
+                          readOnly 
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Date Joined</label>
+                        <Input 
+                          defaultValue={userProfile?.dateJoined ? new Date(userProfile.dateJoined).toLocaleDateString() : ''} 
+                          className="w-full" 
+                          readOnly 
+                        />
+                      </div>
                     </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                      <Input defaultValue="akshith.kumar@company.com" className="w-full" />
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Email Templates Section */}
@@ -3731,7 +3919,19 @@ Best regards,`,
                   Cancel
                 </Button>
                 <div className="flex items-center gap-3">
-                  <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 bg-transparent">
+                  <Button
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 bg-transparent"
+                    onClick={() => {
+                      try {
+                        if (typeof window !== "undefined") {
+                          localStorage.removeItem("sally_auth")
+                        }
+                      } catch {}
+                      setIsUserSettingsOpen(false)
+                      router.replace("/login")
+                    }}
+                  >
                     <LogOut className="h-4 w-4 mr-2" />
                     Logout
                   </Button>
