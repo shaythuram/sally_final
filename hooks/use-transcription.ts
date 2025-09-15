@@ -159,6 +159,12 @@ export const useTranscription = () => {
           if (audioPath) {
             setLastUploadedAudioPath(audioPath);
             await CallManager.updateCallRecording(currentCall.call_id, audioPath);
+            const signedUrl = await AudioUploadService.getSignedAudioUrl(audioPath, 60 * 60);
+            console.log('✅ Call recording uploaded:', {
+              bucket: 'call-recordings',
+              path: audioPath,
+              signedUrl
+            });
           }
         }
       }

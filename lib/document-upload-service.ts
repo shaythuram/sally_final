@@ -35,11 +35,12 @@ export class DocumentUploadService {
       const timestamp = Date.now()
       const fileExtension = file.name.split('.').pop()
       const fileName = `${timestamp}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
-      const filePath = `users/${userId}/upcoming-calls/${callId}/${fileName}`
+      // Path must start with the authenticated user's uid to satisfy storage RLS
+      const filePath = `${userId}/${callId}/${fileName}`
 
       // Upload file to Supabase Storage
       const { data, error } = await supabase.storage
-        .from('documents')
+        .from('call-documents')
         .upload(filePath, file, {
           contentType: file.type || 'application/octet-stream',
           upsert: false
@@ -63,6 +64,19 @@ export class DocumentUploadService {
         uploaded_at: new Date().toISOString()
       }
 
+      try {
+        const { data: signed } = await supabase.storage
+          .from('call-documents')
+          .createSignedUrl(filePath, 60 * 60)
+        console.log('✅ Document uploaded:', {
+          bucket: 'call-documents',
+          path: filePath,
+          signedUrl: signed?.signedUrl
+        })
+      } catch (_) {
+        // non-fatal
+      }
+
       return documentInfo
     } catch (error) {
       console.error('Error uploading document:', error)
@@ -74,7 +88,7 @@ export class DocumentUploadService {
   static async getDocumentUrl(filePath: string): Promise<string | null> {
     try {
       const { data } = supabase.storage
-        .from('documents')
+        .from('call-documents')
         .getPublicUrl(filePath)
 
       return data.publicUrl
@@ -88,7 +102,7 @@ export class DocumentUploadService {
   static async deleteDocument(filePath: string): Promise<boolean> {
     try {
       const { error } = await supabase.storage
-        .from('documents')
+        .from('call-documents')
         .remove([filePath])
 
       if (error) {
@@ -107,7 +121,7 @@ export class DocumentUploadService {
   static async deleteDocuments(filePaths: string[]): Promise<boolean> {
     try {
       const { error } = await supabase.storage
-        .from('documents')
+        .from('call-documents')
         .remove(filePaths)
 
       if (error) {

@@ -5,7 +5,8 @@ export class AudioUploadService {
   static async uploadAudioFile(audioBlob: Blob, callId: string, userId: string): Promise<string | null> {
     try {
       const fileName = `call_${callId}_${Date.now()}.webm`
-      const filePath = `users/${userId}/calls/${callId}/${fileName}`
+      // Path must start with the authenticated user's uid to satisfy storage RLS
+      const filePath = `${userId}/${callId}/${fileName}`
       
       const { data, error } = await supabase.storage
         .from('call-recordings')
