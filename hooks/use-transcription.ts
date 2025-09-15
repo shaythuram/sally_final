@@ -93,6 +93,8 @@ export const useTranscription = () => {
   // Database integration state
   const [currentCall, setCurrentCall] = useState<any>(null);
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+  const [lastUploadedAudioPath, setLastUploadedAudioPath] = useState<string | null>(null);
+  const [lastRecordingBlob, setLastRecordingBlob] = useState<Blob | null>(null);
   
   // WebSocket connection management
   const systemWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,6 +113,8 @@ export const useTranscription = () => {
     meetingDescription?: string
     attendeeEmails: string[]
     transcriptAdminEmail: string
+    assistantId?: string
+    threadId?: string
   }, userId: string) => {
     try {
       // Create call in database
@@ -134,9 +138,9 @@ export const useTranscription = () => {
   }, []);
 
   // Stop call with database integration
-  const stopCall = useCallback(async () => {
+  const stopCall = useCallback(async (): Promise<boolean> => {
     try {
-      if (!currentCall) return;
+      if (!currentCall) return false;
 
       // Stop recording
       await stopUnifiedRecording();
@@ -145,6 +149,7 @@ export const useTranscription = () => {
       if (systemAudioChunks.length > 0 || micAudioChunks.length > 0) {
         const combinedBlob = await createCombinedAudioFile();
         if (combinedBlob) {
+          setLastRecordingBlob(combinedBlob);
           const audioPath = await AudioUploadService.uploadAudioFile(
             combinedBlob, 
             currentCall.call_id, 
@@ -152,6 +157,7 @@ export const useTranscription = () => {
           );
           
           if (audioPath) {
+            setLastUploadedAudioPath(audioPath);
             await CallManager.updateCallRecording(currentCall.call_id, audioPath);
           }
         }
@@ -173,9 +179,10 @@ export const useTranscription = () => {
       // Clear state
       setCurrentCall(null);
       setTranscriptEntries([]);
-      
+      return true;
     } catch (error) {
       console.error('Error stopping call:', error);
+      return false;
     }
   }, [currentCall, transcriptEntries, recordingTime, discoData, quickAnalysisData, systemAudioChunks, micAudioChunks]);
 
@@ -313,36 +320,38 @@ export const useTranscription = () => {
     }
   }, []);
 
-  // Create and download combined audio file
-  const createCombinedAudioFile = useCallback(async () => {
+  // Build a blob to upload (no auto-download). Prefer mic track if available, else system.
+  const createCombinedAudioFile = useCallback(async (): Promise<Blob | null> => {
     try {
-      if (systemAudioChunks.length === 0 && micAudioChunks.length === 0) {
-        console.log('⚠️ No audio chunks to combine');
-        return;
-      }
-
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      
-      // Download system audio if available
-      if (systemAudioChunks.length > 0) {
-        const systemBlob = new Blob(systemAudioChunks, { type: 'audio/webm' });
-        downloadAudioFile(systemBlob, `system_audio_${timestamp}.webm`);
-      }
-      
-      // Download microphone audio if available
       if (micAudioChunks.length > 0) {
-        const micBlob = new Blob(micAudioChunks, { type: 'audio/webm' });
-        downloadAudioFile(micBlob, `microphone_audio_${timestamp}.webm`);
+        return new Blob(micAudioChunks, { type: 'audio/webm' });
       }
-
-      // For now, we'll download separate files. In the future, we could implement audio mixing
-      // to create a single combined file with both system and microphone audio
-      console.log('✅ Audio files downloaded successfully');
-      
+      if (systemAudioChunks.length > 0) {
+        return new Blob(systemAudioChunks, { type: 'audio/webm' });
+      }
+      console.log('⚠️ No audio chunks available to build upload blob');
+      return null;
     } catch (error) {
-      console.error('❌ Error creating combined audio file:', error);
+      console.error('❌ Error creating uploadable audio blob:', error);
+      return null;
     }
-  }, [systemAudioChunks, micAudioChunks, downloadAudioFile]);
+  }, [micAudioChunks, systemAudioChunks]);
+
+  // Provide a synchronous way to fetch the latest local recording blob
+  const getLocalRecordingBlob = useCallback((): Blob | null => {
+    try {
+      if (micAudioChunks.length > 0) {
+        return new Blob(micAudioChunks, { type: 'audio/webm' });
+      }
+      if (systemAudioChunks.length > 0) {
+        return new Blob(systemAudioChunks, { type: 'audio/webm' });
+      }
+      return null;
+    } catch (error) {
+      console.error('Error creating local recording blob:', error);
+      return null;
+    }
+  }, [micAudioChunks, systemAudioChunks]);
 
   // DISCO Analysis function
   const analyzeDisco = useCallback(async (conversation: string) => {
@@ -1067,28 +1076,44 @@ export const useTranscription = () => {
   // Recording functions
   const startSystemRecording = useCallback(async () => {
     try {
-      const source = screenSources.find((s: ScreenSource) => s.id === selectedScreenSource);
-      if (!source) {
-        throw new Error('No source selected');
-      }
+      let stream: MediaStream | null = null;
+      const isElectron = typeof window !== 'undefined' && (window as any).electronAPI;
 
-      // Get user media with the selected screen source
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          // @ts-ignore - Chrome-specific properties for screen capture
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: source.id
-          }
-        },
-        video: {
-          // @ts-ignore - Chrome-specific properties for screen capture
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: source.id
+      if (isElectron) {
+        // Electron path uses selected desktop source id
+        let source = screenSources.find((s: ScreenSource) => s.id === selectedScreenSource);
+        if (!source) {
+          const fallback = screenSources.find((s: ScreenSource) => s.id.startsWith('screen:')) || screenSources[0];
+          if (fallback) {
+            setSelectedScreenSource(fallback.id);
+            source = fallback;
           }
         }
-      });
+        if (!source) throw new Error('No source selected');
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            // @ts-ignore - Chrome-specific properties for screen capture
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: source.id
+            }
+          },
+          video: {
+            // @ts-ignore - Chrome-specific properties for screen capture
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: source.id
+            }
+          }
+        });
+      } else {
+        // Web path: use standard display capture API (no source id needed)
+        stream = await (navigator.mediaDevices as any).getDisplayMedia({
+          video: true,
+          audio: true
+        });
+      }
 
       // Set up video preview
       if (systemVideoRef.current) {
@@ -1112,11 +1137,7 @@ export const useTranscription = () => {
       };
 
       mediaRecorder.onstop = () => {
-        // Create audio blob and download
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `system_audio_${timestamp}.webm`;
-        downloadAudioFile(audioBlob, filename);
+        // Prevent auto-download on stop; uploads happen in stopCall
       };
 
       mediaRecorder.start();
@@ -1157,11 +1178,7 @@ export const useTranscription = () => {
       };
 
       mediaRecorder.onstop = () => {
-        // Create audio blob and download
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `microphone_audio_${timestamp}.webm`;
-        downloadAudioFile(audioBlob, filename);
+        // Prevent auto-download on stop; uploads happen in stopCall
       };
 
       mediaRecorder.start();
@@ -1512,9 +1529,9 @@ export const useTranscription = () => {
     // Stop DISCO analysis interval
     stopDiscoAnalysisInterval();
     
-    // Download recorded audio files
-    await createCombinedAudioFile();
-    
+    // Give MediaRecorder onstop handlers a moment to flush final chunks
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     // CONSOLIDATE AND LOG ALL CALL DATA
     const consolidatedData = consolidateCallData();
     
@@ -1645,6 +1662,8 @@ export const useTranscription = () => {
     // Database integration state
     currentCall,
     transcriptEntries,
+    lastUploadedAudioPath,
+    lastRecordingBlob,
     
     // Refs
     systemVideoRef,
@@ -1664,6 +1683,7 @@ export const useTranscription = () => {
     consolidateCallData,
     downloadAudioFile,
     createCombinedAudioFile,
+    getLocalRecordingBlob,
     
     // Database integration actions
     startCall,

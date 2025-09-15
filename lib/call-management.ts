@@ -36,7 +36,9 @@ export class CallManager {
           post_call_completion: 0,
           tasks_completed: 0,
           total_tasks: 0,
-          pending_tasks: 0
+          pending_tasks: 0,
+          assistant_id: callData.assistantId ?? null,
+          thread_id: callData.threadId ?? null
         }])
         .select()
         .single()
@@ -50,6 +52,66 @@ export class CallManager {
     } catch (error) {
       console.error('Error creating call:', error)
       return null
+    }
+  }
+
+  // Replace the entire transcript entries array
+  static async updateCallTranscript(callId: string, entries: TranscriptEntry[]): Promise<boolean> {
+    try {
+      // Fetch current transcript to preserve permissions and metadata
+      const { data: call, error: fetchError } = await supabase
+        .from('calls')
+        .select('transcript')
+        .eq('call_id', callId)
+        .single()
+
+      if (fetchError || !call) {
+        console.error('Error fetching call for transcript update:', fetchError)
+        return false
+      }
+
+      const transcript: TranscriptData = call.transcript || {
+        entries: [],
+        permissions: { admin: '', editors: [], viewers: [] },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      transcript.entries = entries
+      transcript.updated_at = new Date().toISOString()
+
+      const { error } = await supabase
+        .from('calls')
+        .update({ transcript })
+        .eq('call_id', callId)
+
+      if (error) {
+        console.error('Error updating call transcript:', error)
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error('Error updating call transcript:', error)
+      return false
+    }
+  }
+
+  // Set assistant and thread IDs after external creation
+  static async setAssistantAndThreadIds(callId: string, assistantId: string, threadId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('calls')
+        .update({ assistant_id: assistantId, thread_id: threadId })
+        .eq('call_id', callId)
+
+      if (error) {
+        console.error('Error setting assistant/thread IDs:', error)
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error('Error setting assistant/thread IDs:', error)
+      return false
     }
   }
 
@@ -313,6 +375,25 @@ export class CallManager {
       return true
     } catch (error) {
       console.error('Error updating actions:', error)
+      return false
+    }
+  }
+
+  // Update labels on a call
+  static async updateCallLabels(callId: string, labels: Array<{ text: string; color: string }>): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('calls')
+        .update({ labels })
+        .eq('call_id', callId)
+
+      if (error) {
+        console.error('Error updating call labels:', error)
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error('Error updating call labels:', error)
       return false
     }
   }

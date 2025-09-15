@@ -40,10 +40,17 @@ export class DocumentUploadService {
       // Upload file to Supabase Storage
       const { data, error } = await supabase.storage
         .from('documents')
-        .upload(filePath, file)
+        .upload(filePath, file, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: false
+        })
 
       if (error) {
-        console.error('Error uploading document:', error)
+        console.error('Error uploading document:', {
+          message: error.message,
+          name: (error as any).name,
+          status: (error as any).statusCode || (error as any).status,
+        })
         return null
       }
 

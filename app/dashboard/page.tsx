@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   Clock,
   Shield,
@@ -24,15 +25,19 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
 import { Sidebar } from "@/components/sidebar"
 import { useTranscription } from "@/hooks/use-transcription"
 import { CallManager } from "@/lib/call-management"
 import { supabase } from "@/lib/supabase"
+import { UpcomingCallsManager, UpcomingCall } from "@/lib/upcoming-calls-manager"
 
 // Mock data for the dashboard
 const mockTranscriptionData = {
@@ -221,6 +226,9 @@ export default function DashboardPage() {
     startCall,
     stopCall,
     addTranscriptEntry,
+    lastUploadedAudioPath,
+    lastRecordingBlob,
+    getLocalRecordingBlob,
   } = useTranscription()
 
   // Get dynamic DISCO panel data
@@ -228,6 +236,17 @@ export default function DashboardPage() {
   
   // User state for database operations
   const [user, setUser] = useState<any>(null)
+  const [upcomingCalls, setUpcomingCalls] = useState<UpcomingCall[]>([])
+
+  // Start Call modal state
+  const [isStartCallModalOpen, setIsStartCallModalOpen] = useState(false)
+  const [startTab, setStartTab] = useState<'select' | 'create'>('select')
+  const [selectedUpcomingId, setSelectedUpcomingId] = useState<string | null>(null)
+  const [newCallTitle, setNewCallTitle] = useState("")
+  const [newCallCompany, setNewCallCompany] = useState("")
+  const [newCallAgenda, setNewCallAgenda] = useState<string>("")
+  const [newCallDescription, setNewCallDescription] = useState("")
+  const [newCallAttendees, setNewCallAttendees] = useState<string>("")
   
   // Initialize user
   useEffect(() => {
@@ -235,10 +254,53 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setUser(user)
+        // Load user's upcoming calls for Start Call modal
+        const calls = await UpcomingCallsManager.getUserUpcomingCalls(user.id)
+        setUpcomingCalls(calls)
       }
     }
     initializeUser()
   }, [])
+
+  // Auto-start call if navigated with callId from Upcoming Calls
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const maybeStartCall = async () => {
+      try {
+        const callId = searchParams.get('callId')
+        if (!callId) return
+        if (!user) return
+
+        // Fetch upcoming call details
+        const upcoming = await (await import('@/lib/upcoming-calls-manager')).UpcomingCallsManager.getUpcomingCallById(callId)
+        if (!upcoming) return
+
+        // Start live call with details from upcoming call
+        const callData = {
+          title: upcoming.title,
+          company: upcoming.company,
+          meetingAgenda: Array.isArray(upcoming.agenda) ? upcoming.agenda : [],
+          meetingDescription: upcoming.description || '',
+          attendeeEmails: Array.isArray(upcoming.attendees) ? upcoming.attendees : [],
+          transcriptAdminEmail: user.email || '',
+          assistantId: upcoming.assistant_id,
+          threadId: upcoming.thread_id,
+        }
+
+        const ok = await startCall(callData, user.id)
+        if (ok) {
+          try { await (await import('@/lib/upcoming-calls-manager')).UpcomingCallsManager.deleteUpcomingCall(callId) } catch {}
+          try {
+            const calls = await (await import('@/lib/upcoming-calls-manager')).UpcomingCallsManager.getUserUpcomingCalls(user.id)
+            setUpcomingCalls(calls)
+          } catch {}
+        }
+      } catch (e) {
+        console.error('Failed to auto-start call from upcoming call:', e)
+      }
+    }
+    maybeStartCall()
+  }, [searchParams, user, startCall])
 
   // Enhanced start call handler that creates a database record
   const handleStartCall = async () => {
@@ -248,22 +310,8 @@ export default function DashboardPage() {
     }
 
     try {
-      // Create call record in database and start recording
-      const callData = {
-        title: `Meeting - ${new Date().toLocaleDateString()}`,
-        company: 'Client Company',
-        meetingAgenda: ['General Discussion'],
-        meetingDescription: 'Live meeting transcription',
-        attendeeEmails: [],
-        transcriptAdminEmail: user.email || ''
-      }
-
-      const success = await startCall(callData, user.id)
-      if (success) {
-        console.log('Call started successfully')
-      } else {
-        console.error('Failed to start call')
-      }
+      // Open modal to select or create a call
+      setIsStartCallModalOpen(true)
     } catch (error) {
       console.error('Error starting call:', error)
     }
@@ -276,6 +324,7 @@ export default function DashboardPage() {
       const success = await stopCall()
       if (success) {
         console.log('Call stopped and data saved successfully')
+        setIsPostCallModalOpen(true)
       } else {
         console.error('Failed to stop call properly')
       }
@@ -307,6 +356,123 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error('Failed to toggle content protection:', error)
+    }
+  }
+
+  // Post-call modal state and actions
+  const [isPostCallModalOpen, setIsPostCallModalOpen] = useState(false)
+  const downloadLastRecording = async () => {
+    try {
+      // Prefer local in-memory blob recorded during this session
+      const localBlob = lastRecordingBlob || getLocalRecordingBlob()
+      if (localBlob) {
+        const url = URL.createObjectURL(localBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'recording.webm'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        return
+      }
+
+      // Fallback: use storage path if blob not available
+      let path = lastUploadedAudioPath
+      if (!path && user) {
+        const { data, error } = await supabase
+          .from('calls')
+          .select('voice_recording_path')
+          .eq('owner_id', user.id)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        if (!error && data?.voice_recording_path) {
+          path = data.voice_recording_path as string
+        }
+      }
+      if (!path) {
+        console.error('No recording path available to download')
+        return
+      }
+      const { data, error } = await supabase.storage
+        .from('call-recordings')
+        .createSignedUrl(path, 300)
+      if (error || !data?.signedUrl) {
+        console.error('Failed to create signed URL:', error)
+        return
+      }
+      const response = await fetch(data.signedUrl)
+      if (!response.ok) {
+        console.error('Failed to fetch recording via signed URL:', response.status)
+        return
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = (path.split('/').pop() || 'recording.webm')
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('Failed to download recording:', e)
+    }
+  }
+
+  // Confirm starting selected upcoming call
+  const confirmStartFromUpcoming = async () => {
+    if (!user || !selectedUpcomingId) return
+    try {
+      const upcoming = await UpcomingCallsManager.getUpcomingCallById(selectedUpcomingId)
+      if (!upcoming) return
+      const callData = {
+        title: upcoming.title,
+        company: upcoming.company,
+        meetingAgenda: Array.isArray(upcoming.agenda) ? upcoming.agenda : [],
+        meetingDescription: upcoming.description || '',
+        attendeeEmails: Array.isArray(upcoming.attendees) ? upcoming.attendees : [],
+        transcriptAdminEmail: user.email || '',
+        assistantId: upcoming.assistant_id,
+        threadId: upcoming.thread_id,
+      }
+      const ok = await startCall(callData, user.id)
+      if (ok) {
+        setIsStartCallModalOpen(false)
+        try { await UpcomingCallsManager.deleteUpcomingCall(selectedUpcomingId) } catch {}
+        try { const calls = await UpcomingCallsManager.getUserUpcomingCalls(user.id); setUpcomingCalls(calls) } catch {}
+      }
+    } catch (e) {
+      console.error('Failed to start from upcoming call:', e)
+    }
+  }
+
+  // Create a new call and immediately start it
+  const createAndStartNewCall = async () => {
+    if (!user) return
+    try {
+      const agenda = newCallAgenda
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+      const attendeeEmails = newCallAttendees
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+      const callData = {
+        title: newCallTitle || `Meeting - ${new Date().toLocaleDateString()}`,
+        company: newCallCompany || 'Client Company',
+        meetingAgenda: agenda.length ? agenda : ['General Discussion'],
+        meetingDescription: newCallDescription || 'Live meeting transcription',
+        attendeeEmails,
+        transcriptAdminEmail: user.email || '',
+      }
+      const ok = await startCall(callData, user.id)
+      if (ok) setIsStartCallModalOpen(false)
+    } catch (e) {
+      console.error('Failed to create and start new call:', e)
     }
   }
 
@@ -506,6 +672,69 @@ export default function DashboardPage() {
 
         {/* Main Content - fills remaining space */}
         <div className="flex-1 flex flex-col px-6 py-6">
+          {/* Start Call Modal */}
+          <Dialog open={isStartCallModalOpen} onOpenChange={setIsStartCallModalOpen}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Start a Call</DialogTitle>
+              </DialogHeader>
+              <Tabs value={startTab} onValueChange={(v) => setStartTab(v as 'select' | 'create')}>
+                <TabsList className="grid grid-cols-2 w-full">
+                  <TabsTrigger value="select">Select Upcoming</TabsTrigger>
+                  <TabsTrigger value="create">Create New</TabsTrigger>
+                </TabsList>
+                <TabsContent value="select" className="mt-4">
+                  <div className="space-y-3 max-h-72 overflow-y-auto">
+                    {upcomingCalls.length === 0 && (
+                      <div className="text-sm text-gray-500">No upcoming calls found.</div>
+                    )}
+                    {upcomingCalls.map((c) => (
+                      <button
+                        key={c.call_id}
+                        onClick={() => setSelectedUpcomingId(c.call_id)}
+                        className={`w-full text-left p-3 rounded border ${selectedUpcomingId === c.call_id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                      >
+                        <div className="font-medium text-gray-900">{c.title}</div>
+                        <div className="text-xs text-gray-600">{c.company} • {c.call_date} {c.call_time}</div>
+                        {Array.isArray(c.agenda) && c.agenda.length > 0 && (
+                          <div className="mt-1 text-xs text-gray-500 truncate">Agenda: {c.agenda.join(', ')}</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <DialogFooter className="mt-4">
+                    <Button onClick={confirmStartFromUpcoming} disabled={!selectedUpcomingId} className="w-full">Start Selected Call</Button>
+                  </DialogFooter>
+                </TabsContent>
+                <TabsContent value="create" className="mt-4 space-y-3">
+                  <Input placeholder="Title" value={newCallTitle} onChange={e => setNewCallTitle(e.target.value)} />
+                  <Input placeholder="Company" value={newCallCompany} onChange={e => setNewCallCompany(e.target.value)} />
+                  <Textarea placeholder="Agenda (one item per line)" value={newCallAgenda} onChange={e => setNewCallAgenda(e.target.value)} />
+                  <Textarea placeholder="Description" value={newCallDescription} onChange={e => setNewCallDescription(e.target.value)} />
+                  <Input placeholder="Attendees (comma-separated emails)" value={newCallAttendees} onChange={e => setNewCallAttendees(e.target.value)} />
+                  <DialogFooter>
+                    <Button onClick={createAndStartNewCall} className="w-full">Create and Start</Button>
+                  </DialogFooter>
+                </TabsContent>
+              </Tabs>
+            </DialogContent>
+          </Dialog>
+
+          {/* Post Call Modal */}
+          <Dialog open={isPostCallModalOpen} onOpenChange={setIsPostCallModalOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Call Ended</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">What would you like to do next?</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button onClick={downloadLastRecording} variant="outline">Download Recording</Button>
+                  <Button onClick={() => { setIsPostCallModalOpen(false); router.push('/dashboard?view=recent') }}>Go to Recent Calls</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
           <div className={`flex-1 grid grid-cols-1 gap-8 ${isTranscriptionVisible ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
             {/* Left Column - Live Transcription */}
             {isTranscriptionVisible && (

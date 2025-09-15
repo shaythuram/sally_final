@@ -42,7 +42,7 @@ import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/sidebar"
 import Link from "next/link"
-import { supabase, UserProfile } from "@/lib/supabase"
+import { supabase, UserProfile, Call } from "@/lib/supabase"
 import { UpcomingCallsManager, UpcomingCall } from "@/lib/upcoming-calls-manager"
 import { DocumentUploadService } from "@/lib/document-upload-service"
 
@@ -657,6 +657,11 @@ export default function Dashboard() {
         // Load upcoming calls
         const calls = await UpcomingCallsManager.getUserUpcomingCalls(user.id)
         setUpcomingCalls(calls)
+        // Load full call history
+        try {
+          const all = await (await import("@/lib/call-management")).CallManager.getUserCalls(user.id)
+          setCallHistory(all)
+        } catch {}
       }
     }
     initializeUser()
@@ -959,6 +964,31 @@ Best regards,`,
   const [isLoading, setIsLoading] = useState(false)
   const [isCreateCallOpen, setIsCreateCallOpen] = useState(false)
   const [upcomingCalls, setUpcomingCalls] = useState<UpcomingCall[]>([])
+  const [callHistory, setCallHistory] = useState<Call[]>([])
+  const callHistoryCards = callHistory.map((c) => ({
+    id: c.call_id,
+    title: c.title,
+    company: c.company,
+    date: c.call_date,
+    duration: `${c.duration}min`,
+    attendees: c.attendees ?? 0,
+    actions: {
+      notes: !!c.ai_summary,
+      email: true,
+      transcript: true,
+      report: false,
+      minutes: false,
+      presentation: false,
+    },
+    postCallCompletion: c.post_call_completion ?? 0,
+    tasksCompleted: c.tasks_completed ?? 0,
+    totalTasks: c.total_tasks ?? 0,
+    pendingTasks: c.pending_tasks ?? 0,
+    aiSummary: c.ai_summary ?? '',
+    documents: [],
+    owner: 'You',
+    labels: (c as any).labels || [],
+  }))
   const [user, setUser] = useState<any>(null)
   const [newCall, setNewCall] = useState({
     title: "",
@@ -1781,6 +1811,248 @@ Best regards,`,
                       <Upload className="h-4 w-4 mr-2" />
                       Upload Documents
                     </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Call History */}
+        {callHistory.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-gray-900">Call History</h2>
+                <p className="text-gray-600 mt-1">All your past calls</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              {callHistoryCards.map((call) => (
+                <Card
+                  key={call.id}
+                  className="glass-card hover:shadow-lg transition-shadow border border-gray-200 cursor-pointer"
+                  onClick={() => handleCallCardClick(call)}
+                >
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg font-semibold text-gray-900 mb-2">{call.title}</CardTitle>
+                        <div className="flex items-center gap-1 text-sm text-gray-600 mb-3">
+                          <span className="font-medium">{call.company}</span>
+                          <span>•</span>
+                          <span>{call.date}</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-4 w-4" />
+                            <span>{call.duration}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Users className="h-4 w-4" />
+                            <span>{call.attendees} attendees</span>
+                          </div>
+                        </div>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem>View Details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewTranscript(call.id) }}>Open Transcript</DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleSendEmail(call.id) }}>Send Follow-up</DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRenameCall(call.id) }}>
+                            <Edit3 className="h-4 w-4 mr-2" />
+                            Rename Call
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleAddLabel(call.id) }}>
+                            <Tag className="h-4 w-4 mr-2" />
+                            Add Label
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    {/* Action Buttons (same as Recent Calls) */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 text-xs h-8 bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSendEmail(call.id)
+                        }}
+                      >
+                        <Mail className="h-3 w-3" />
+                        <span className="truncate">Send Email</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 text-xs h-8 bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleNotesClick(call)
+                        }}
+                      >
+                        <FileText className="h-3 w-3" />
+                        <span className="truncate">{call.actions.notes ? 'View Notes' : 'Create Notes'}</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 text-xs h-8 bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleViewTranscript(call.id)
+                        }}
+                      >
+                        <MessageSquare className="h-3 w-3" />
+                        <span className="truncate">View Transcript</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 text-xs h-8 bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleReportClick(call)
+                        }}
+                      >
+                        <Bookmark className="h-3 w-3" />
+                        <span className="truncate">{call.actions.report ? 'View Report' : 'Create Report'}</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 text-xs h-8 bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const action = call.actions.presentation ? 'View Presentation' : 'Create Presentation'
+                          if (call.actions.presentation) {
+                            alert(`Opening presentation for ${call.title}`)
+                          } else {
+                            alert(`Creating presentation for ${call.title}`)
+                          }
+                        }}
+                      >
+                        <Monitor className="h-3 w-3" />
+                        <span className="truncate">{call.actions.presentation ? 'View Presentation' : 'Create Presentation'}</span>
+                      </Button>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="pt-0">
+                    {/* Post-Call Completion */}
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-900">Post-Call Completion</span>
+                        <span className="text-sm font-semibold text-gray-900">{call.postCallCompletion}%</span>
+                      </div>
+                      <Progress value={call.postCallCompletion} className="h-2 mb-2" />
+                      <div className="flex items-center justify-between text-xs text-gray-600">
+                        <span>
+                          {call.tasksCompleted}/{call.totalTasks} tasks completed
+                        </span>
+                        <span>{call.pendingTasks} pending</span>
+                      </div>
+                    </div>
+
+                    {/* AI Summary */}
+                    {call.aiSummary && (
+                      <div className="mb-2">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                          <span className="text-sm font-medium text-gray-700">AI Summary</span>
+                        </div>
+                        <p className="text-sm text-gray-600 leading-relaxed">{call.aiSummary}</p>
+                      </div>
+                    )}
+
+                    {/* Documents */}
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-700">Documents ({call.documents?.length || 0})</span>
+                      </div>
+                      {call.documents && call.documents.length > 0 ? (
+                        <div className="space-y-1">
+                          {call.documents.slice(0, 2).map((doc, index) => (
+                            <button
+                              key={index}
+                              onClick={(e) => { e.stopPropagation(); handleViewDocument(doc) }}
+                              className="flex items-center justify-between w-full p-2 text-xs bg-gray-50 hover:bg-gray-100 rounded border text-left transition-colors"
+                            >
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <FileText className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                                <span className="truncate text-gray-700">{doc.name}</span>
+                              </div>
+                              <span className="text-gray-500 ml-2 flex-shrink-0">{doc.size}</span>
+                            </button>
+                          ))}
+                          {call.documents.length > 2 && (
+                            <div className="text-xs text-gray-500 pl-5">+{call.documents.length - 2} more documents</div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-500 pl-5">No documents</div>
+                      )}
+                    </div>
+
+                    {/* Agenda snapshot */}
+                    {Array.isArray(call.meeting_agenda) && (call.meeting_agenda as any).length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-gray-700 mb-1">Agenda:</p>
+                        <ul className="text-xs text-gray-600 space-y-1">
+                          {(call.meeting_agenda as any).slice(0, 3).map((item: string, idx: number) => (
+                            <li key={idx} className="flex items-start">
+                              <span className="text-gray-400 mr-2">•</span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Owner and Labels */}
+                    <div className="mt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center">
+                          <span className="text-gray-700 font-bold text-xs">{(call.owner || 'Y').charAt(0)}</span>
+                        </div>
+                        <span className="text-sm text-gray-600">Owner: {call.owner}</span>
+                      </div>
+                      {call.labels && call.labels.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {call.labels.slice(0, expandedLabels[call.id] ? call.labels.length : 3).map((label, index) => (
+                            <div key={index} className="group relative">
+                              <div
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getLabelStyles(label.color).bg} ${getLabelStyles(label.color).text} ${getLabelStyles(label.color).border}`}
+                              >
+                                {label.text}
+                              </div>
+                            </div>
+                          ))}
+                          {call.labels.length > 3 && !expandedLabels[call.id] && (
+                            <button
+                              className="text-xs text-blue-600 hover:underline ml-1"
+                              onClick={(e) => { e.stopPropagation(); setExpandedLabels(prev => ({ ...prev, [call.id]: true })) }}
+                            >
+                              +{call.labels.length - 3} more
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               ))}

@@ -15,6 +15,8 @@ CREATE TABLE calls (
   
   -- AI & Analysis
   ai_summary TEXT,
+  assistant_id TEXT, -- ID of the assistant created for this call
+  thread_id TEXT, -- ID of the thread associated with this call
   
   -- Status & Metadata
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
@@ -36,6 +38,7 @@ CREATE TABLE calls (
   
   -- Genie Content
   genie_content JSONB DEFAULT '[]', -- list of genie content items
+  labels JSONB DEFAULT '[]', -- list of labels { text, color }
   
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -85,3 +88,5 @@ CREATE INDEX idx_calls_owner_id ON calls(owner_id);
 CREATE INDEX idx_calls_call_date ON calls(call_date);
 CREATE INDEX idx_calls_status ON calls(status);
 CREATE INDEX idx_calls_company ON calls(company);
+CREATE INDEX idx_calls_assistant_id ON calls(assistant_id);
+CREATE INDEX idx_calls_thread_id ON calls(thread_id);

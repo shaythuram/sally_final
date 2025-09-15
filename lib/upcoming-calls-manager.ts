@@ -11,6 +11,8 @@ export interface UpcomingCall {
   description?: string
   agenda: string[]
   documents: DocumentInfo[]
+  assistant_id?: string
+  thread_id?: string
   created_at: string
   updated_at: string
 }
@@ -24,6 +26,26 @@ export interface DocumentInfo {
 }
 
 export class UpcomingCallsManager {
+  // Get a single upcoming call by ID
+  static async getUpcomingCallById(callId: string): Promise<UpcomingCall | null> {
+    try {
+      const { data, error } = await supabase
+        .from('upcoming_calls')
+        .select('*')
+        .eq('call_id', callId)
+        .single()
+
+      if (error) {
+        console.error('Error fetching upcoming call by id:', error)
+        return null
+      }
+
+      return data
+    } catch (error) {
+      console.error('Error fetching upcoming call by id:', error)
+      return null
+    }
+  }
   // Create a new upcoming call
   static async createUpcomingCall(
     userId: string, 
@@ -35,6 +57,8 @@ export class UpcomingCallsManager {
       attendees: string[]
       description?: string
       agenda: string[]
+      assistantId?: string
+      threadId?: string
     }
   ): Promise<UpcomingCall | null> {
     try {
@@ -49,7 +73,9 @@ export class UpcomingCallsManager {
           attendees: callData.attendees,
           description: callData.description || '',
           agenda: callData.agenda,
-          documents: []
+          documents: [],
+          assistant_id: callData.assistantId ?? null,
+          thread_id: callData.threadId ?? null
         }])
         .select()
         .single()
@@ -63,6 +89,29 @@ export class UpcomingCallsManager {
     } catch (error) {
       console.error('Error creating upcoming call:', error)
       return null
+    }
+  }
+
+  // Set assistant and thread IDs after external creation for upcoming calls
+  static async setAssistantAndThreadIds(
+    callId: string,
+    assistantId: string,
+    threadId: string
+  ): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('upcoming_calls')
+        .update({ assistant_id: assistantId, thread_id: threadId, updated_at: new Date().toISOString() })
+        .eq('call_id', callId)
+
+      if (error) {
+        console.error('Error setting assistant/thread IDs for upcoming call:', error)
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error('Error setting assistant/thread IDs for upcoming call:', error)
+      return false
     }
   }
 

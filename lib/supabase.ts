@@ -86,6 +86,8 @@ export interface Call {
   
   // AI & Analysis
   ai_summary?: string
+  assistant_id?: string
+  thread_id?: string
   
   // Status & Metadata
   status: 'active' | 'completed' | 'archived'
@@ -104,6 +106,7 @@ export interface Call {
   tasks_completed: number
   total_tasks: number
   pending_tasks: number
+  labels?: Array<{ text: string; color: string }>
   
   // Genie Content
   genie_content: string[]
@@ -129,6 +132,8 @@ export interface CreateCallData {
   meetingDescription?: string
   attendeeEmails: string[]
   transcriptAdminEmail: string
+  assistantId?: string
+  threadId?: string
 }
 
 // Call update interface
