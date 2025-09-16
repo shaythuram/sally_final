@@ -1157,6 +1157,7 @@ Best regards,`,
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [isRelabelOpen, setIsRelabelOpen] = useState(false)
+  const [transcriptData, setTranscriptData] = useState<any>(null)
   const [speakerNames, setSpeakerNames] = useState<{ [key: string]: string }>({
     "Person 1": "Person 1",
     "Person 2": "Person 2",
@@ -1402,7 +1403,7 @@ Best regards,`,
 
   const handleViewTranscript = (callId: string) => {
     setSelectedCallId(callId)
-    setIsTranscriptOpen(true)
+    fetchTranscriptData(callId)
   }
 
   const handleSendMessage = () => {
@@ -1744,6 +1745,49 @@ Best regards,`,
 
   const currentTranscript = selectedCallId ? mockTranscript[selectedCallId as keyof typeof mockTranscript] : null
 
+  const fetchTranscriptData = async (callId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('calls')
+        .select('transcript')
+        .eq('call_id', callId)
+        .single()
+      
+      if (error) {
+        console.error('Error fetching transcript:', error)
+        return
+      }
+      
+      if (data?.transcript) {
+        setTranscriptData(data.transcript)
+        setIsTranscriptOpen(true)
+      }
+    } catch (error) {
+      console.error('Error fetching transcript:', error)
+    }
+  }
+
+  const handleDownloadTranscript = () => {
+    if (!transcriptData?.entries) return
+    
+    let content = `${selectedCallForDetails?.title || 'Call Transcript'}\n${selectedCallForDetails?.date || ''}\n\n`
+    
+    transcriptData.entries.forEach((entry: any) => {
+      const timestamp = `${Math.floor((entry.order - 1) * 8 / 60).toString().padStart(2, '0')}:${((entry.order - 1) * 8 % 60).toString().padStart(2, '0')}`
+      content += `[${timestamp}] ${entry.speaker}: ${entry.text}\n`
+    })
+    
+    const blob = new Blob([content], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${(selectedCallForDetails?.title || 'transcript').replace(/[^a-zA-Z0-9]/g, "_")}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const getUniqueCompanies = () => {
     const companies = calls.map((call) => call.company)
     return [...new Set(companies)].sort()
@@ -1752,6 +1796,25 @@ Best regards,`,
   const handleCallCardClick = (call: any) => {
     setSelectedCallForDetails(call)
     setIsCallDetailsOpen(true)
+    if (call?.id || call?.call_id) {
+      fetchCallDocuments(call.id || call.call_id)
+    }
+  }
+
+  const fetchCallDocuments = async (callId: string) => {
+    try {
+      // Prefer authoritative list from storage
+      if (!user?.id) return
+      const prefix = `${user.id}/${callId}`
+      const { data: files, error } = await supabase.storage
+        .from('call-documents')
+        .list(prefix, { limit: 100, offset: 0 })
+      if (error) { console.warn('Storage list error:', error); return }
+      const docs = (files || []).map((f: any) => ({ name: f.name, path: `${prefix}/${f.name}`, size: f.metadata?.size || f.size || '', type: f.metadata?.mimetype || '' }))
+      setSelectedCallForDetails((prev: any) => prev ? { ...prev, documents: docs } : prev)
+    } catch (e) {
+      console.error('Unexpected documents fetch error:', e)
+    }
   }
 
   const handleRelabelSpeakers = () => {
@@ -1803,7 +1866,7 @@ Best regards,`,
       console.log('AI complete response:', json ?? await resp.text())
       
       // Parse response and show in modal
-      let content = ""
+    let content = ""
       let tag: string | undefined = undefined
       let actionButton: "send" | "download" | "copy" = "download"
       
@@ -1819,12 +1882,12 @@ Best regards,`,
       else if (normalizedTag === "Report") actionButton = "download"
       else if (normalizedTag === "Answer" || normalizedTag === "Powerpoint") actionButton = "copy"
       else actionButton = "download"
-      
-      setAiGenerationModal({
-        isOpen: true,
-        action: actionText,
+
+    setAiGenerationModal({
+      isOpen: true,
+      action: actionText,
         type: normalizedTag,
-        content,
+      content,
         actionButton,
       })
     } catch (e) {
@@ -1956,17 +2019,33 @@ Best regards,`,
     URL.revokeObjectURL(url)
   }
 
-  const handleSaveTranscript = () => {
-    // Update the transcript entries with edited content
-    if (selectedCallId && mockTranscript[selectedCallId]) {
-      const updatedEntries = mockTranscript[selectedCallId].entries.map((entry, index) => {
+  const handleSaveTranscript = async () => {
+    try {
+      if (!selectedCallId || !transcriptData?.entries) return
+      const updatedEntries = transcriptData.entries.map((entry: any, index: number) => {
         const editKey = `${selectedCallId}-${index}`
         return editedTranscript[editKey] ? { ...entry, text: editedTranscript[editKey] } : entry
       })
-      mockTranscript[selectedCallId] = { ...mockTranscript[selectedCallId], entries: updatedEntries }
-    }
+
+      const updatedTranscript = { ...transcriptData, entries: updatedEntries }
+
+      const { error } = await supabase
+        .from('calls')
+        .update({ transcript: updatedTranscript })
+        .eq('call_id', selectedCallId)
+
+      if (error) {
+        console.error('Failed to save transcript:', error)
+        return
+      }
+
+      setTranscriptData(updatedTranscript)
     setEditedTranscript({})
     setIsEditing(false)
+      console.log('Transcript saved successfully')
+    } catch (e) {
+      console.error('Error saving transcript:', e)
+    }
   }
 
   const handleTranscriptChange = (callId: string, entryIndex: number, newText: string) => {
@@ -2095,24 +2174,16 @@ Best regards,`,
       <header className="sticky top-0 z-50 border-b border-border/20 bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center">
-                  <span className="text-gray-700 font-bold text-sm">S</span>
+              <div>
+                <Button
+                  onClick={() => setIsCreateCallOpen(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Call
+                </Button>
                 </div>
-                <h1 className="text-xl font-semibold">Sally</h1>
-              </div>
-              <nav className="text-sm text-muted-foreground flex items-center gap-4">
-                <Link href="/dashboard" className="hover:text-foreground transition-colors">
-                  Dashboard
-                </Link>
-                <Link href="/calls" className="hover:text-foreground transition-colors">
-                  Calls
-                </Link>
-                <Link href="/files" className="hover:text-foreground transition-colors">
-                  Files
-                </Link>
-              </nav>
             </div>
 
             <div className="flex items-center gap-4">
@@ -2551,23 +2622,27 @@ Best regards,`,
           </div>
         )}
 
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-gray-900">Recent Calls</h2>
-              <p className="text-gray-600 mt-1">Your latest sales calls and their completion status</p>
+        {/* Recent Calls header + create button - commented out per request */}
+        {false && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold text-gray-900">Recent Calls</h2>
+                <p className="text-gray-600 mt-1">Your latest sales calls and their completion status</p>
+              </div>
+              <Button 
+                onClick={() => setIsCreateCallOpen(true)} 
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={!user}
+              >
+                Create Call
+              </Button>
             </div>
-            <Button 
-              onClick={() => setIsCreateCallOpen(true)} 
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              disabled={!user}
-            >
-              Create Call
-            </Button>
           </div>
-        </div>
+        )}
 
-        {/* Calls Grid */}
+        {/* Calls Grid - commented out per request */}
+        {false && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCalls.map((call) => (
             <Card
@@ -2807,6 +2882,7 @@ Best regards,`,
             </Card>
           ))}
         </div>
+        )}
       </div>
 
       {/* Create Call Modal */}
@@ -2878,7 +2954,7 @@ Best regards,`,
                       </div>
                     ))}
                   </div>
-                  <Input
+                <Input
                     value={currentEmailInput}
                     onChange={(e) => handleEmailInputChange(e.target.value)}
                     onKeyDown={handleEmailInputKeyDown}
@@ -3207,10 +3283,13 @@ Best regards,`,
         </div>
       )}
 
-      {isTranscriptOpen && currentTranscript && (
+      {isTranscriptOpen && transcriptData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           {/* Blurred Background Overlay */}
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsTranscriptOpen(false)} />
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => {
+            setIsTranscriptOpen(false)
+            setTranscriptData(null)
+          }} />
 
           {/* Modal Content */}
           <div className="relative bg-white rounded-lg shadow-2xl w-[90vw] h-[85vh] max-w-7xl flex overflow-hidden">
@@ -3221,7 +3300,7 @@ Best regards,`,
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">Call Transcript</h2>
                   <p className="text-sm text-gray-600">
-                    {currentTranscript.title} • {currentTranscript.date}
+                    {selectedCallForDetails?.title || 'Call'} • {selectedCallForDetails?.date || ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -3243,11 +3322,19 @@ Best regards,`,
                     <Users className="h-4 w-4" />
                     Relabel
                   </Button>
-                  <Button variant="outline" size="sm" className="flex items-center gap-2 bg-transparent">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex items-center gap-2 bg-transparent"
+                    onClick={handleDownloadTranscript}
+                  >
                     <Download className="h-4 w-4" />
                     Download
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setIsTranscriptOpen(false)}>
+                  <Button variant="ghost" size="sm" onClick={() => {
+                    setIsTranscriptOpen(false)
+                    setTranscriptData(null)
+                  }}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
@@ -3256,9 +3343,13 @@ Best regards,`,
               {/* Transcript Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="space-y-6">
-                  {currentTranscript.entries.map((entry, index) => (
-                    <div key={`transcript-entry-${index}`} className="flex gap-4">
-                      <div className="text-sm text-gray-500 font-mono w-20 flex-shrink-0">{entry.timestamp}</div>
+                  {transcriptData.entries?.map((entry: any, index: number) => {
+                    // Generate timestamp based on order (assuming ~8 seconds per entry)
+                    const timestamp = `${Math.floor((entry.order - 1) * 8 / 60).toString().padStart(2, '0')}:${((entry.order - 1) * 8 % 60).toString().padStart(2, '0')}`
+                    
+                    return (
+                    <div key={index} className="flex gap-4">
+                        <div className="text-sm text-gray-500 font-mono w-20 flex-shrink-0">{timestamp}</div>
                       <div className="flex-1">
                         <div className="font-medium text-gray-900 mb-1">
                           {speakerNames[entry.speaker] || entry.speaker}
@@ -3271,20 +3362,13 @@ Best regards,`,
                           />
                         ) : (
                           <p className="text-sm text-gray-700 leading-relaxed">
-                            {entry.text.split(" ").map((word, wordIndex) => {
-                              const cleanWord = word.replace(/[.,!?]/g, "")
-                              const isUncertain = entry.uncertainWords.includes(cleanWord.toLowerCase())
-                              return (
-                                <span key={`word-${index}-${wordIndex}`} className={isUncertain ? "bg-yellow-200 px-1 rounded" : ""}>
-                                  {word}{" "}
-                                </span>
-                              )
-                            })}
+                              {entry.text}
                           </p>
                         )}
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -3490,27 +3574,27 @@ Best regards,`,
                       if (items.length === 0) return null
                       return items.map((text: string, idx: number) => (
                         <div key={idx} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                          <input
-                            type="checkbox"
+                    <input
+                      type="checkbox"
                             id={`action-${idx}`}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
                           <label htmlFor={`action-${idx}`} className="text-sm text-gray-700 flex-1">
                             {text.replace(/^\d+\.\s*/, '')}
-                          </label>
-                          <button
+                    </label>
+                    <button
                             onClick={() => handleAIGeneration(text.replace(/^\d+\.\s*/, ''), idx)}
                             className={`p-1.5 rounded-md transition-colors ${aiGeneratingActionIdx === idx ? 'text-purple-600 bg-purple-50' : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50'}`}
-                            title="Generate with AI"
+                      title="Generate with AI"
                             disabled={aiGeneratingActionIdx === idx}
-                          >
+                    >
                             {aiGeneratingActionIdx === idx ? (
                               <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeOpacity=".25"/><path d="M22 12a10 10 0 0 1-10 10"/></svg>
                             ) : (
-                              <Sparkles className="h-4 w-4" />
+                      <Sparkles className="h-4 w-4" />
                             )}
-                          </button>
-                        </div>
+                    </button>
+                  </div>
                       ))
                     } catch {
                       return null

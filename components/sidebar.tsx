@@ -27,11 +27,11 @@ const navigation = [
     href: "/",
     icon: Phone,
   },
-  {
-    name: "Transcription",
-    href: "/transcription",
-    icon: Mic,
-  },
+  // {
+  //   name: "Transcription",
+  //   href: "/transcription",
+  //   icon: Mic,
+  // },
   {
     name: "Files",
     href: "/files",
