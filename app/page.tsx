@@ -2209,7 +2209,8 @@ Best regards,`,
 
                 {/* Action Buttons */}
                 <div className="grid grid-cols-2 gap-2 mb-4">
-                  {/* Update Send Email button in call cards to open email modal */}
+                  {/* Send Email button temporarily disabled */}
+                  {/*
                   <Button
                     variant="outline"
                     size="sm"
@@ -2222,6 +2223,7 @@ Best regards,`,
                     <Mail className="h-3 w-3" />
                     <span className="truncate">Send Email</span>
                   </Button>
+                  */}
 
                   <Button
                     variant="outline"
