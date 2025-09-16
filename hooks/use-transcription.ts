@@ -54,7 +54,7 @@ export const useTranscription = () => {
   const [systemTranscriptionError, setSystemTranscriptionError] = useState('');
   const [transcriptionError, setTranscriptionError] = useState('');
   const [systemSpeakers, setSystemSpeakers] = useState<Map<number, string>>(new Map());
-  const [diarizationEnabled, setDiarizationEnabled] = useState(true);
+  const [diarizationEnabled, setDiarizationEnabled] = useState(false);
 
   // Messages
   const [allMessages, setAllMessages] = useState<TranscriptionMessage[]>([]);
@@ -117,6 +117,43 @@ export const useTranscription = () => {
     threadId?: string
   }, userId: string) => {
     try {
+      // Always load screen sources fresh before starting call
+      console.log('Loading screen sources before starting call...');
+      let sources: ScreenSource[] = [];
+      
+      try {
+        // Check if we're running in Electron
+        if (typeof window !== 'undefined' && (window as any).electronAPI) {
+          console.log('Loading screen sources from Electron...');
+          sources = await (window as any).electronAPI.getDesktopSources();
+          console.log('Electron sources loaded:', sources);
+        } else {
+          console.log('Using web browser fallback sources...');
+          // Fallback for web browsers
+          sources = [
+            { id: 'screen:0:0', name: 'Entire Screen', thumbnail: '' },
+          ];
+        }
+        
+        console.log('Total sources available:', sources.length);
+        if (sources.length === 0) {
+          throw new Error('No screen sources available. Please ensure screen sharing permissions are granted.');
+        }
+        
+        // Update state with fresh sources
+        setScreenSources(sources);
+        
+        // Automatically select the first screen source
+        const selectedSourceId = sources[0].id;
+        setSelectedScreenSource(selectedSourceId);
+        
+        console.log('Selected source ID:', selectedSourceId);
+        
+      } catch (error) {
+        console.error('Error loading screen sources:', error);
+        throw new Error('Failed to load screen sources. Please ensure screen sharing permissions are granted.');
+      }
+
       // Create call in database
       const newCall = await CallManager.createCall(callData, userId);
       if (!newCall) {
@@ -124,11 +161,19 @@ export const useTranscription = () => {
         return false;
       }
 
+      console.log('🎯 CALL CREATED - Call ID:', newCall.call_id);
+      console.log('📋 Call Details:', {
+        title: newCall.title,
+        company: newCall.company,
+        call_id: newCall.call_id,
+        owner_id: newCall.owner_id
+      });
+
       setCurrentCall(newCall);
       setTranscriptEntries([]);
       
-      // Start recording and transcription
-      await startUnifiedRecording();
+      // Start recording and transcription with the selected source
+      await startUnifiedRecordingWithSource(sources[0]);
       
       return true;
     } catch (error) {
@@ -169,18 +214,248 @@ export const useTranscription = () => {
         }
       }
 
-      // Generate AI summary from transcript
-      const transcriptText = transcriptEntries.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+      // Convert allMessages to transcript entries (use live transcription data)
+      const finalMessages = allMessages.filter(msg => msg.text.trim() && msg.isFinal);
+      
+      console.log('\ud83d\udcc4 Converting live messages to transcript entries:');
+      console.log('  - Total messages:', allMessages.length);
+      console.log('  - Final messages with text:', finalMessages.length);
+      
+      // Generate AI summary from live messages
+      const transcriptText = finalMessages.map(msg => {
+        const speaker = msg.type === 'microphone' ? 'You' : (msg.speakerLabel || `Speaker ${(msg.speakerId || 0) + 1}`);
+        return `${speaker}: ${msg.text}`;
+      }).join('\n');
+      
       const aiSummary = transcriptText.length > 0 ? 
         `Meeting Summary:\n\nKey Points:\n${transcriptText.slice(0, 500)}${transcriptText.length > 500 ? '...' : ''}` : 
         'No transcript available';
 
-      // Update call with final data
-      await CallManager.updateCallTranscript(currentCall.call_id, transcriptEntries);
-      await CallManager.updateCallDisco(currentCall.call_id, discoData);
-      await CallManager.updateCallGenie(currentCall.call_id, [quickAnalysisData]);
+      // 1. Format transcript for JSONB storage (speaker-labeled, no timestamps, in order)
+      const formattedTranscript = finalMessages.map((msg, index) => {
+        const speaker = msg.type === 'microphone' ? 'You' : (msg.speakerLabel || `Speaker ${(msg.speakerId || 0) + 1}`);
+        return {
+          order: index + 1,
+          speaker: speaker,
+          text: msg.text
+        };
+      });
+      
+      console.log('\ud83d\udcc4 Formatted transcript for storage:', formattedTranscript.length, 'entries');
+
+      // 2. Format DISCO data for JSONB storage
+      const formattedDiscoData = {
+        decision_criteria: (discoData as any).Decision_Criteria || (discoData as any).decision_criteria || '',
+        impact: (discoData as any).Impact || (discoData as any).impact || '',
+        situation: (discoData as any).Situation || (discoData as any).situation || '',
+        challenges: (discoData as any).Challenges || (discoData as any).challenges || '',
+        objectives: (discoData as any).Objectives || (discoData as any).objectives || ''
+      };
+      
+      console.log('\ud83d\udcc8 Formatted DISCO data for storage:', formattedDiscoData);
+
+      // 3. Format Genie content - split between AI chat Q&A and live analysis
+      const splitGenieContent = (() => {
+        if (!quickAnalysisData.trim()) {
+          return {
+            live_analysis: [],
+            ai_chat_qna: []
+          };
+        }
+
+        console.log('\ud83d\udd0d ===== GENIE PARSING DEBUG =====');
+        console.log('\ud83d\udd0d Raw quickAnalysisData:', quickAnalysisData);
+        
+        const liveAnalysis: Array<{content: string, type: string}> = [];
+        const aiChatQna: Array<{question: string, answer: string, timestamp: string}> = [];
+        
+        // Split by double newlines and process
+        const sections = quickAnalysisData.split('\n\n').filter(section => section.trim());
+        console.log('\ud83d\udd0d Total sections:', sections.length);
+        
+        // More robust Q&A detection using regex patterns
+        const fullText = quickAnalysisData;
+        
+        // Pattern 1: ## Your Question ... ## AI Response
+        const qnaPattern1 = /## Your Question\s*([\s\S]*?)\s*## AI Response\s*([\s\S]*?)(?=##|$)/g;
+        let match1;
+        while ((match1 = qnaPattern1.exec(fullText)) !== null) {
+          const question = match1[1].trim();
+          const answer = match1[2].trim();
+          if (question && answer) {
+            aiChatQna.push({
+              question: question,
+              answer: answer,
+              timestamp: new Date().toLocaleTimeString()
+            });
+            console.log('\ud83d\udcac Found Q&A (Pattern 1):', { q: question.substring(0, 30) + '...', a: answer.substring(0, 30) + '...' });
+          }
+        }
+        
+        // Pattern 2: Plain question followed by "AI Response:"
+        const lines = fullText.split('\n');
+        for (let i = 0; i < lines.length - 1; i++) {
+          const currentLine = lines[i].trim();
+          const nextLine = lines[i + 1]?.trim();
+          
+          // If current line is a question and next line starts with "AI Response:"
+          if (currentLine && !currentLine.startsWith('##') && !currentLine.startsWith('AI Response') &&
+              nextLine && nextLine.startsWith('AI Response:')) {
+            
+            const question = currentLine;
+            const answer = nextLine.replace('AI Response:', '').trim();
+            
+            if (question && answer) {
+              aiChatQna.push({
+                question: question,
+                answer: answer,
+                timestamp: new Date().toLocaleTimeString()
+              });
+              console.log('\ud83d\udcac Found Q&A (Pattern 2):', { q: question.substring(0, 30) + '...', a: answer.substring(0, 30) + '...' });
+            }
+          }
+        }
+        
+        console.log('\ud83d\udd0d Found Q&A pairs total:', aiChatQna.length);
+        
+        // Now process remaining sections for live analysis (excluding already processed Q&A)
+        const processedSections = new Set();
+        
+        // Mark Q&A sections as processed
+        aiChatQna.forEach(qa => {
+          sections.forEach((section, index) => {
+            if (section.includes(qa.question) || section.includes(qa.answer)) {
+              processedSections.add(index);
+            }
+          });
+        });
+        
+        // Process remaining sections as live analysis
+        sections.forEach((section, index) => {
+          if (processedSections.has(index)) {
+            return; // Skip already processed Q&A sections
+          }
+          
+          const trimmedSection = section.trim();
+          
+          // Skip empty sections or headers without content
+          if (!trimmedSection || trimmedSection === '## Your Question' || trimmedSection === '## AI Response') {
+            return;
+          }
+          
+          // Categorize based on content type
+          if (trimmedSection.startsWith('## Real-time Analysis')) {
+            const content = trimmedSection.replace('## Real-time Analysis', '').trim();
+            if (content) {
+              liveAnalysis.push({
+                content: content,
+                type: 'realtime_analysis'
+              });
+            }
+          } else if (trimmedSection.startsWith('AI Response:')) {
+            // Standalone AI response (not part of Q&A)
+            const content = trimmedSection.replace('AI Response:', '').trim();
+            liveAnalysis.push({
+              content: content,
+              type: 'ai_response'
+            });
+          } else {
+            // General live analysis content
+            liveAnalysis.push({
+              content: trimmedSection,
+              type: 'live_analysis'
+            });
+          }
+        });
+        
+        console.log('\ud83d\udd0d Final parsing results:');
+        console.log('  - Live Analysis entries:', liveAnalysis.length);
+        console.log('  - AI Chat Q&A pairs:', aiChatQna.length);
+        console.log('===============================');
+
+        return {
+          live_analysis: liveAnalysis,
+          ai_chat_qna: aiChatQna
+        };
+      })();
+      
+      console.log('\ud83e\uddde Formatted Genie content for storage:');
+      console.log('  - Live Analysis entries:', splitGenieContent.live_analysis.length);
+      console.log('  - AI Chat Q&A pairs:', splitGenieContent.ai_chat_qna.length);
+
+      // Update call with final formatted data
+      console.log('\ud83d\udce4 ===== SENDING DATA TO SUPABASE =====');
+      console.log('\ud83d\udcc4 Transcript data being sent:', JSON.stringify(formattedTranscript, null, 2));
+      console.log('\ud83d\udcc8 DISCO data being sent:', JSON.stringify(formattedDiscoData, null, 2));
+      console.log('\ud83e\uddde Genie data being sent:', JSON.stringify(splitGenieContent, null, 2));
+      console.log('\ud83d\udcdd Summary being sent:', aiSummary);
+      console.log('=============================================');
+      
+      await CallManager.updateCallTranscript(currentCall.call_id, formattedTranscript);
+      await CallManager.updateCallDisco(currentCall.call_id, formattedDiscoData);
+      await CallManager.updateCallGenie(currentCall.call_id, splitGenieContent);
       await CallManager.updateCallSummary(currentCall.call_id, aiSummary);
       await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
+      
+      // ===== COMPREHENSIVE CALL END LOGGING =====
+      console.log('🎯 ===== CALL ENDED - COMPREHENSIVE LOGGING =====');
+      console.log('📞 Call ID:', currentCall.call_id);
+      console.log('⏱️ Call Duration:', Math.floor(recordingTime / 60), 'minutes');
+      
+      // 1. TRANSCRIPT LOGGING (chronological order, no timestamps)
+      console.log('📝 ===== FULL TRANSCRIPT (Chronological) =====');
+      if (formattedTranscript.length > 0) {
+        formattedTranscript.forEach((entry) => {
+          console.log(`${entry.order}. ${entry.speaker}: ${entry.text}`);
+        });
+        console.log('\ud83d\udcc4 Total transcript entries:', formattedTranscript.length);
+      } else {
+        console.log('No transcript entries found');
+        console.log('\ud83d\udcac Available live messages:', allMessages.length);
+        console.log('\ud83d\udcac Final messages with text:', finalMessages.length);
+      }
+      
+      // 2. DISCO ANALYSIS LOGGING
+      console.log('🔍 ===== LATEST DISCO ANALYSIS =====');
+      if (Object.keys(discoData).length > 0) {
+        console.log('DISCO Data:', JSON.stringify(discoData, null, 2));
+      } else {
+        console.log('No DISCO analysis data available');
+      }
+      
+      // 3. GENIE LOGGING (using the properly parsed data from stopCall)
+      console.log('🧞 ===== GENIE CONTENT (PROPERLY PARSED) =====');
+      console.log('Live Analysis entries:', splitGenieContent.live_analysis.length);
+      console.log('AI Chat Q&A pairs:', splitGenieContent.ai_chat_qna.length);
+      console.log('Full Genie data structure:', JSON.stringify(splitGenieContent, null, 2));
+      
+      // 4. UPLOADED FILES LOGGING
+      console.log('📁 ===== UPLOADED FILES =====');
+      
+      // Audio recording URL
+      if (lastUploadedAudioPath) {
+        const audioUrl = `https://your-supabase-project.supabase.co/storage/v1/object/public/call-recordings/${lastUploadedAudioPath}`;
+        console.log('🎵 Audio Recording URL:', audioUrl);
+      } else {
+        console.log('🎵 Audio Recording: No audio file uploaded');
+      }
+      
+      // Document files URLs (if any were uploaded during the call)
+      if (currentCall && currentCall.documents && Array.isArray(currentCall.documents)) {
+        if (currentCall.documents.length > 0) {
+          console.log('📄 Document URLs:');
+          currentCall.documents.forEach((doc: any) => {
+            const docUrl = `https://your-supabase-project.supabase.co/storage/v1/object/public/call-documents/${doc.path}`;
+            console.log(`   - ${docUrl}`);
+          });
+        } else {
+          console.log('📄 Documents: No documents uploaded');
+        }
+      } else {
+        console.log('📄 Documents: No document data available');
+      }
+      
+      console.log('🎯 ===== END OF CALL LOGGING =====');
       
       // Clear state
       setCurrentCall(null);
@@ -365,11 +640,13 @@ export const useTranscription = () => {
       console.log('🚀 Starting DISCO analysis...');
       console.log('📊 Current DISCO data:', discoData);
       console.log('💬 Conversation to analyze:', conversation);
+      console.log('🆔 Current call assistant ID:', currentCall?.assistant_id || 'No assistant ID');
+      console.log('🧵 Current call thread ID:', currentCall?.thread_id || 'No thread ID');
       
       setIsAnalyzingDisco(true);
       setDiscoError('');
       
-      const requestBody = {
+      const requestBody: any = {
         conversation,
         context: {
           type: 'live_transcription',
@@ -377,10 +654,30 @@ export const useTranscription = () => {
         }
       };
       
-      console.log('📤 Sending request to DISCO API:', {
-        url: 'http://localhost:8000/api/analyze-disco',
-        body: requestBody
-      });
+      // Only include assistantId and threadId if the current call has them
+      if (currentCall?.assistant_id) {
+        requestBody.assistantId = currentCall.assistant_id;
+        console.log('✅ Using assistant ID for DISCO analysis:', currentCall.assistant_id);
+        
+        if (currentCall?.thread_id) {
+          requestBody.threadId = currentCall.thread_id;
+          console.log('✅ Using thread ID for DISCO analysis:', currentCall.thread_id);
+          console.log('🤖 Assistant + Thread powered DISCO analysis enabled');
+        } else {
+          console.log('🤖 Assistant-powered DISCO analysis enabled (no thread)');
+        }
+      } else {
+        console.log('⚠️ No assistant ID found - using standard DISCO analysis');
+      }
+      
+      console.log('📤 ===== DISCO API REQUEST DEBUG =====');
+      console.log('🎯 URL:', 'http://localhost:8000/api/analyze-disco');
+      console.log('📄 Request Body:', JSON.stringify(requestBody, null, 2));
+      console.log('🔍 Request Body Size:', JSON.stringify(requestBody).length, 'characters');
+      console.log('🔍 Conversation Length:', requestBody.conversation?.length || 0, 'characters');
+      console.log('🔍 Has Assistant ID:', !!requestBody.assistantId);
+      console.log('🔍 Has Thread ID:', !!requestBody.threadId);
+      console.log('====================================');
       
       const response = await fetch('http://localhost:8000/api/analyze-disco', {
         method: 'POST',
@@ -390,7 +687,11 @@ export const useTranscription = () => {
         body: JSON.stringify(requestBody),
       });
       
-      console.log('📡 Response status:', response.status);
+      console.log('📡 ===== DISCO API RESPONSE STATUS =====');
+      console.log('📡 Status Code:', response.status);
+      console.log('📡 Status Text:', response.statusText);
+      console.log('📡 Headers:', Object.fromEntries(response.headers.entries()));
+      console.log('=====================================');
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -399,52 +700,89 @@ export const useTranscription = () => {
 
       const result = await response.json();
       
-      console.log('📥 Full API Response:', result);
+      console.log('📥 ===== DISCO API RESPONSE DEBUG =====');
+      console.log('📄 Raw Response:', JSON.stringify(result, null, 2));
+      console.log('🔍 Response Type:', typeof result);
+      console.log('🔍 Response Keys:', Object.keys(result || {}));
+      console.log('🔍 Success Field:', result?.success);
+      console.log('🔍 Data Field:', result?.data);
+      console.log('🔍 Message Field:', result?.message);
+      console.log('🔍 Error Field:', result?.error);
+      console.log('=======================================');
       
       // Store raw response for debugging
       setRawDiscoResponse(result);
       
-      // Check if response has the expected structure
-      if (result.success && result.data) {
-        // Standard API response format: { success: true, data: { ... } }
-        console.log('✅ DISCO analysis completed successfully (standard format)', result.data);
-        setDiscoData(prev => ({
-          ...prev,
-          ...result.data
-        }));
-      } else if (result.Decision_Criteria !== undefined || result.Impact !== undefined || result.Situation !== undefined || result.Challenges !== undefined || result.Objectives !== undefined) {
-        // Direct DISCO data format: { Decision_Criteria: "...", Impact: "...", ... }
-        console.log('✅ DISCO analysis completed successfully (direct format)', result);
-        setDiscoData(prev => ({
-          ...prev,
-          ...result
-        }));
+      // Check if response has DISCO framework fields directly or wrapped in success/data structure
+      const hasDiscoFields = result.Decision_Criteria || result.Impact || result.Situation || result.Challenges || result.Objectives;
+      const hasSuccessStructure = result.success && result.data;
+      
+      if (hasSuccessStructure) {
+        // Standard success/data structure
+        console.log('✅ DISCO analysis successful (success/data structure)');
+        console.log('📈 DISCO Data to be set:', JSON.stringify(result.data, null, 2));
+        setDiscoData(result.data);
+        console.log('✅ DISCO data state updated successfully');
+      } else if (hasDiscoFields) {
+        // Direct DISCO fields in response
+        console.log('✅ DISCO analysis successful (direct fields structure)');
+        console.log('📈 DISCO Data to be set:', JSON.stringify(result, null, 2));
+        setDiscoData(result);
+        console.log('✅ DISCO data state updated successfully');
       } else {
-        console.error('❌ API returned unexpected response format:', result);
-        throw new Error('Unexpected response format from DISCO analysis API');
+        // Neither structure found
+        console.log('❌ DISCO analysis failed or no recognizable data');
+        console.log('❌ Failure reason:', result.message || result.error || 'No DISCO fields found');
+        console.log('❌ Success flag:', result.success);
+        console.log('❌ Data present:', !!result.data);
+        console.log('❌ DISCO fields present:', hasDiscoFields);
+        setDiscoError(result.message || result.error || 'No DISCO fields found in API response');
       }
     } catch (error) {
-      console.error('Error analyzing DISCO:', error);
+      console.error('❌ ===== DISCO API ERROR DEBUG =====');
+      console.error('❌ Error Type:', typeof error);
+      console.error('❌ Error Name:', (error as Error)?.name);
+      console.error('❌ Error Message:', (error as Error)?.message);
+      console.error('❌ Error Stack:', (error as Error)?.stack);
+      console.error('❌ Full Error Object:', error);
+      console.error('==================================');
       setDiscoError(`DISCO analysis failed: ${(error as Error).message}`);
     } finally {
       setIsAnalyzingDisco(false);
     }
-  }, [discoData]);
+  }, [discoData, currentCall]); // Updated dependency array to include currentCall
 
   // Quick Analysis function for Genie
   const analyzeQuick = useCallback(async (conversation: string) => {
     try {
       console.log('🚀 Starting Quick Analysis...');
       console.log('💬 Conversation for quick analysis:', conversation);
+      console.log('🆔 Current call assistant ID:', currentCall?.assistant_id || 'No assistant ID');
+      console.log('🧵 Current call thread ID:', currentCall?.thread_id || 'No thread ID');
       
       setIsAnalyzingQuick(true);
       setQuickAnalysisError('');
       
-      const requestBody = {
+      const requestBody: any = {
         ai_chat: false,
-        conversation: conversation,
-        assistantId: "asst_UhbQJ7HBkkLvj5NeMOd5daVT"
+        conversation: conversation
       };
+      
+      // Only include assistantId and threadId if the current call has them
+      if (currentCall?.assistant_id) {
+        requestBody.assistantId = currentCall.assistant_id;
+        console.log('✅ Using assistant ID for Quick Analysis:', currentCall.assistant_id);
+        
+        if (currentCall?.thread_id) {
+          requestBody.threadId = currentCall.thread_id;
+          console.log('✅ Using thread ID for Quick Analysis:', currentCall.thread_id);
+          console.log('🤖 Assistant + Thread powered Quick Analysis enabled');
+        } else {
+          console.log('🤖 Assistant-powered Quick Analysis enabled (no thread)');
+        }
+      } else {
+        console.log('⚠️ No assistant ID found - using standard Quick Analysis');
+      }
       
       console.log('📤 Sending request to Quick Analysis API:', {
         url: 'http://localhost:8000/api/generate-quick-answer',
@@ -498,22 +836,39 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingQuick(false);
     }
-  }, []);
+  }, [currentCall]);
 
   // AI Chat function for Genie
   const sendAiChat = useCallback(async (userQuery: string, onResponse?: (response: string) => void) => {
     try {
       console.log('🤖 Starting AI Chat...');
       console.log('❓ User query:', userQuery);
+      console.log('🆔 Current call assistant ID:', currentCall?.assistant_id || 'No assistant ID');
+      console.log('🧵 Current call thread ID:', currentCall?.thread_id || 'No thread ID');
       
       setIsAnalyzingQuick(true);
       setQuickAnalysisError('');
       
-      const requestBody = {
+      const requestBody: any = {
         ai_chat: true,
-        user_query: userQuery,
-        assistantId: "asst_UhbQJ7HBkkLvj5NeMOd5daVT"
+        user_query: userQuery
       };
+      
+      // Only include assistantId and threadId if the current call has them
+      if (currentCall?.assistant_id) {
+        requestBody.assistantId = currentCall.assistant_id;
+        console.log('✅ Using assistant ID for AI Chat:', currentCall.assistant_id);
+        
+        if (currentCall?.thread_id) {
+          requestBody.threadId = currentCall.thread_id;
+          console.log('✅ Using thread ID for AI Chat:', currentCall.thread_id);
+          console.log('🤖 Assistant + Thread powered AI Chat enabled');
+        } else {
+          console.log('🤖 Assistant-powered AI Chat enabled (no thread)');
+        }
+      } else {
+        console.log('⚠️ No assistant ID found - using standard AI Chat');
+      }
       
       console.log('📤 Sending request to AI Chat API:', {
         url: 'http://localhost:8000/api/generate-quick-answer',
@@ -546,10 +901,11 @@ export const useTranscription = () => {
         }
         
         setQuickAnalysisData(prev => {
-          const newContent = `## AI Response\n\n${result.response}\n\n`;
+          const timestamp = new Date().toLocaleTimeString();
+          const newContent = `## Your Question\n\n${userQuery}\n\n## AI Response\n\n${result.response}\n\n`;
           const updated = prev + newContent;
           console.log('✅ AI Chat completed successfully');
-          console.log('✅ AI Chat data appended. New content:', result.response);
+          console.log('✅ AI Chat Q&A pair added:', { question: userQuery, answer: result.response });
           console.log('✅ Full AI Chat data:', updated);
           return updated;
         });
@@ -562,7 +918,7 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingQuick(false);
     }
-  }, []);
+  }, [currentCall]);
 
   // Automatic DISCO analysis: first after 20 seconds, then every 10 seconds
   const startDiscoAnalysisInterval = useCallback(() => {
@@ -579,7 +935,6 @@ export const useTranscription = () => {
     console.log('⏰ Setting up 20-second timeout for first DISCO analysis');
     const firstAnalysis = setTimeout(() => {
       console.log('⏰ 20-second timeout fired! Starting first DISCO analysis');
-      console.log('🔍 Raw allMessages data:', allMessages);
       console.log('🔍 Total messages count:', allMessages.length);
       
       // Log each message individually
@@ -606,8 +961,6 @@ export const useTranscription = () => {
         .join('\n');
       
       console.log('⏰ First DISCO analysis triggered (after 20s). Conversation length:', conversation.length);
-      console.log('📝 Conversation content:', conversation);
-      console.log('📝 Conversation content (JSON):', JSON.stringify(conversation));
       
       // Send to DISCO analysis if we have content
       if (conversation.trim().length > 0) {
@@ -620,7 +973,6 @@ export const useTranscription = () => {
       // Start the regular 10-second interval after the first analysis
       console.log('⏰ Setting up 10-second interval for regular DISCO analysis');
       discoAnalysisTimerRef.current = setInterval(() => {
-        console.log('🔍 Raw allMessages data:', allMessages);
         console.log('🔍 Total messages count:', allMessages.length);
         
         // Log each message individually
@@ -647,8 +999,6 @@ export const useTranscription = () => {
           .join('\n');
         
         console.log('⏰ Regular DISCO analysis triggered (every 10s). Conversation length:', conversation.length);
-        console.log('📝 Conversation content:', conversation);
-        console.log('📝 Conversation content (JSON):', JSON.stringify(conversation));
         
         // Send to DISCO analysis if we have content
         if (conversation.trim().length > 0) {
@@ -919,9 +1269,18 @@ export const useTranscription = () => {
   }, []);
 
   // WebSocket connections
+  // OPTIMIZED: Using single WebSocket connection for both audio streams
+  // This reduces transcription server connections from 2 to 1
   const startMicTranscription = useCallback(async (stream: MediaStream) => {
     try {
+      // Check if connection already exists
+      if (micWsRef.current && micWsRef.current.readyState === WebSocket.OPEN) {
+        console.log('⚠️ Microphone WebSocket already connected, skipping new connection');
+        return;
+      }
+      
       // Connect to WebSocket server
+      console.log('🔌 Creating NEW microphone WebSocket connection to transcription server');
       const ws = new WebSocket('ws://localhost:3001');
       micWsRef.current = ws;
       
@@ -994,7 +1353,14 @@ export const useTranscription = () => {
 
   const startSystemTranscription = useCallback(async (stream: MediaStream) => {
     try {
+      // Check if connection already exists
+      if (systemWsRef.current && systemWsRef.current.readyState === WebSocket.OPEN) {
+        console.log('⚠️ System WebSocket already connected, skipping new connection');
+        return;
+      }
+      
       // Connect to WebSocket server for system audio
+      console.log('🔌 Creating NEW system WebSocket connection to transcription server');
       const ws = new WebSocket('ws://localhost:3001');
       systemWsRef.current = ws;
       
@@ -1086,16 +1452,11 @@ export const useTranscription = () => {
       const isElectron = typeof window !== 'undefined' && (window as any).electronAPI;
 
       if (isElectron) {
-        // Electron path uses selected desktop source id
-        let source = screenSources.find((s: ScreenSource) => s.id === selectedScreenSource);
+        // Use the already selected source (should be set by startCall)
+        const source = screenSources.find((s: ScreenSource) => s.id === selectedScreenSource);
         if (!source) {
-          const fallback = screenSources.find((s: ScreenSource) => s.id.startsWith('screen:')) || screenSources[0];
-          if (fallback) {
-            setSelectedScreenSource(fallback.id);
-            source = fallback;
-          }
+          throw new Error('No screen source selected. Please try starting the call again.');
         }
-        if (!source) throw new Error('No source selected');
 
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -1128,6 +1489,10 @@ export const useTranscription = () => {
       }
 
       // Set up media recorder
+      if (!stream) {
+        throw new Error('Failed to get media stream for system recording');
+      }
+      
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'video/webm;codecs=vp9,opus'
       });
@@ -1138,24 +1503,110 @@ export const useTranscription = () => {
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunks.push(event.data);
-          setSystemAudioChunks(prev => [...prev, event.data]);
         }
       };
 
       mediaRecorder.onstop = () => {
-        // Prevent auto-download on stop; uploads happen in stopCall
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        setSystemAudioChunks(audioChunks);
+        console.log('System recording stopped, audio blob size:', audioBlob.size);
       };
 
-      mediaRecorder.start();
+      // Start recording
+      mediaRecorder.start(1000); // Record in 1-second chunks
+      console.log('System recording started');
 
-      // Start real-time transcription for system audio
-      await startSystemTranscription(stream);
+      // Start system audio transcription
+      if (stream) {
+        await startSystemTranscription(stream);
+      } else {
+        throw new Error('Failed to get media stream for system recording');
+      }
 
     } catch (error) {
       console.error('Error starting system recording:', error);
       setSystemTranscriptionError(`Failed to start system recording: ${(error as Error).message}`);
     }
   }, [screenSources, selectedScreenSource, startSystemTranscription]);
+
+  const startSystemRecordingWithSource = useCallback(async (source: ScreenSource) => {
+    try {
+      let stream: MediaStream | null = null;
+      const isElectron = typeof window !== 'undefined' && (window as any).electronAPI;
+
+      if (isElectron) {
+        console.log('Starting system recording with source:', source.id);
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            // @ts-ignore - Chrome-specific properties for screen capture
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: source.id
+            }
+          },
+          video: {
+            // @ts-ignore - Chrome-specific properties for screen capture
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: source.id
+            }
+          }
+        });
+      } else {
+        // Web path: use standard display capture API (no source id needed)
+        stream = await (navigator.mediaDevices as any).getDisplayMedia({
+          video: true,
+          audio: true
+        });
+      }
+
+      // Set up video preview
+      if (systemVideoRef.current) {
+        systemVideoRef.current.srcObject = stream;
+        setSystemPreview(true);
+      }
+
+      // Set up media recorder
+      if (!stream) {
+        throw new Error('Failed to get media stream for system recording');
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm;codecs=vp9,opus'
+      });
+      systemMediaRecorderRef.current = mediaRecorder;
+
+      // Collect audio chunks for recording
+      const audioChunks: Blob[] = [];
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        setSystemAudioChunks(audioChunks);
+        console.log('System recording stopped, audio blob size:', audioBlob.size);
+      };
+
+      // Start recording
+      mediaRecorder.start(1000); // Record in 1-second chunks
+      console.log('System recording started with source:', source.id);
+
+      // Start system audio transcription
+      if (stream) {
+        await startSystemTranscription(stream);
+      } else {
+        throw new Error('Failed to get media stream for system recording');
+      }
+
+    } catch (error) {
+      console.error('Error starting system recording with source:', error);
+      setSystemTranscriptionError(`Failed to start system recording: ${(error as Error).message}`);
+    }
+  }, [startSystemTranscription]);
 
   const startMicRecording = useCallback(async () => {
     try {
@@ -1213,6 +1664,7 @@ export const useTranscription = () => {
     
     // Clean up WebSocket connection properly
     if (systemWsRef.current) {
+      console.log('🔌 Closing system WebSocket connection to transcription server');
       // Clean up heartbeat monitoring first
       cleanupWebSocketHeartbeat(systemWsRef);
       
@@ -1266,6 +1718,7 @@ export const useTranscription = () => {
     
     // Clean up WebSocket connection properly
     if (micWsRef.current) {
+      console.log('🔌 Closing microphone WebSocket connection to transcription server');
       // Clean up heartbeat monitoring first
       cleanupWebSocketHeartbeat(micWsRef);
       
@@ -1349,6 +1802,48 @@ export const useTranscription = () => {
       isCallActiveRef.current = false; // Reset call active state on error
     }
   }, [startSystemRecording, startMicRecording, startDiscoAnalysisInterval]);
+
+  const startUnifiedRecordingWithSource = useCallback(async (source: ScreenSource) => {
+    try {
+      setIsRecording(true);
+      setRecordingTime(0);
+      isCallActiveRef.current = true; // Mark call as active
+      
+      // Clear all data for fresh start
+      console.log('🧹 Clearing all data for fresh start');
+      setAllMessages([]);
+      setSystemSpeakers(new Map());
+      setDiscoData({});
+      setDiscoError('');
+      setRawDiscoResponse(null);
+      // Keep Genie data persistent - don't clear quickAnalysisData
+      setQuickAnalysisError('');
+      
+      // Clear audio chunks for new recording
+      setSystemAudioChunks([]);
+      setMicAudioChunks([]);
+      
+      // Start system recording with specific source
+      await startSystemRecordingWithSource(source);
+      
+      // Start microphone recording
+      await startMicRecording();
+      
+      // Start unified timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+      // Start DISCO analysis interval
+      console.log('🎯 Starting DISCO analysis interval from startUnifiedRecordingWithSource');
+      startDiscoAnalysisInterval();
+      
+    } catch (error) {
+      console.error('Error starting unified recording with source:', error);
+      setIsRecording(false);
+      isCallActiveRef.current = false; // Reset call active state on error
+    }
+  }, [startMicRecording, startDiscoAnalysisInterval]);
 
   // Send data to post-call actions API
   const sendToPostCallActions = useCallback(async (holisticView: any) => {
@@ -1499,14 +1994,11 @@ export const useTranscription = () => {
       }
     };
     
-    // Log post-call actions request data (API call commented out)
+    // Post-call actions request data (API call commented out)
     const postCallRequest = {
       inputData: holisticView,
       assistantId: null
     };
-    console.log('=== POST-CALL ACTIONS REQUEST DATA ===');
-    console.log(JSON.stringify(postCallRequest, null, 2));
-    console.log('=== END POST-CALL REQUEST ===');
     
     // Send to post-call actions API (COMMENTED OUT)
     // sendToPostCallActions(holisticView);
@@ -1638,6 +2130,7 @@ export const useTranscription = () => {
   useEffect(() => {
     loadScreenSources();
   }, [loadScreenSources]);
+
 
   return {
     // State

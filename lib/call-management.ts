@@ -56,33 +56,50 @@ export class CallManager {
   }
 
   // Replace the entire transcript entries array
-  static async updateCallTranscript(callId: string, entries: TranscriptEntry[]): Promise<boolean> {
+  static async updateCallTranscript(callId: string, entries: any[]): Promise<boolean> {
     try {
-      // Fetch current transcript to preserve permissions and metadata
-      const { data: call, error: fetchError } = await supabase
-        .from('calls')
-        .select('transcript')
-        .eq('call_id', callId)
-        .single()
+      // Check if entries are already formatted (with order, speaker, text) or need formatting
+      const isFormattedEntries = entries.length > 0 && entries[0].hasOwnProperty('order');
+      
+      let finalTranscriptData;
+      
+      if (isFormattedEntries) {
+        // Use the formatted entries directly (from stopCall)
+        finalTranscriptData = {
+          entries: entries,
+          permissions: { admin: '', editors: [], viewers: [] },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        console.log('\ud83d\udcc4 Using formatted transcript entries:', entries.length);
+      } else {
+        // Handle legacy TranscriptEntry format
+        const { data: call, error: fetchError } = await supabase
+          .from('calls')
+          .select('transcript')
+          .eq('call_id', callId)
+          .single()
 
-      if (fetchError || !call) {
-        console.error('Error fetching call for transcript update:', fetchError)
-        return false
+        if (fetchError || !call) {
+          console.error('Error fetching call for transcript update:', fetchError)
+          return false
+        }
+
+        const transcript: TranscriptData = call.transcript || {
+          entries: [],
+          permissions: { admin: '', editors: [], viewers: [] },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+
+        transcript.entries = entries
+        transcript.updated_at = new Date().toISOString()
+        finalTranscriptData = transcript;
       }
-
-      const transcript: TranscriptData = call.transcript || {
-        entries: [],
-        permissions: { admin: '', editors: [], viewers: [] },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-
-      transcript.entries = entries
-      transcript.updated_at = new Date().toISOString()
 
       const { error } = await supabase
         .from('calls')
-        .update({ transcript })
+        .update({ transcript: finalTranscriptData })
         .eq('call_id', callId)
 
       if (error) {
@@ -399,11 +416,33 @@ export class CallManager {
   }
 
   // Update call with genie content
-  static async updateCallGenie(callId: string, genieContent: string[]): Promise<boolean> {
+  static async updateCallGenie(callId: string, genieContent: any): Promise<boolean> {
     try {
+      // Handle both old format (string[]) and new format (split object)
+      let finalGenieData;
+      
+      if (Array.isArray(genieContent)) {
+        // Legacy format - convert to new structure
+        finalGenieData = {
+          live_analysis: genieContent.map((content, index) => ({
+            content: content,
+            type: 'live_analysis',
+            order: index + 1
+          })),
+          ai_chat_qna: []
+        };
+        console.log('\ud83e\uddde Converting legacy genie format to split structure');
+      } else {
+        // New split format
+        finalGenieData = genieContent;
+        console.log('\ud83e\uddde Using new split genie format');
+      }
+      
+      console.log('\ud83e\uddde Final Genie data for storage:', JSON.stringify(finalGenieData, null, 2));
+      
       const { error } = await supabase
         .from('calls')
-        .update({ genie_content: genieContent })
+        .update({ genie_content: finalGenieData })
         .eq('call_id', callId)
       
       if (error) {

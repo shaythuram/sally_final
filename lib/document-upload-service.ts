@@ -87,11 +87,16 @@ export class DocumentUploadService {
   // Get download URL for a document
   static async getDocumentUrl(filePath: string): Promise<string | null> {
     try {
-      const { data } = supabase.storage
+      const { data, error } = await supabase.storage
         .from('call-documents')
-        .getPublicUrl(filePath)
+        .createSignedUrl(filePath, 60 * 60) // 1 hour expiry
 
-      return data.publicUrl
+      if (error) {
+        console.error('Error creating signed URL:', error)
+        return null
+      }
+
+      return data.signedUrl
     } catch (error) {
       console.error('Error getting document URL:', error)
       return null

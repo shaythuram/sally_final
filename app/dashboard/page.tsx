@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import {
   Clock,
   Shield,
@@ -38,6 +38,7 @@ import { useTranscription } from "@/hooks/use-transcription"
 import { CallManager } from "@/lib/call-management"
 import { supabase } from "@/lib/supabase"
 import { UpcomingCallsManager, UpcomingCall } from "@/lib/upcoming-calls-manager"
+
 
 // Mock data for the dashboard
 const mockTranscriptionData = {
@@ -264,6 +265,7 @@ export default function DashboardPage() {
 
   // Auto-start call if navigated with callId from Upcoming Calls
   const searchParams = useSearchParams()
+  const router = useRouter()
   useEffect(() => {
     const maybeStartCall = async () => {
       try {
@@ -287,13 +289,46 @@ export default function DashboardPage() {
           threadId: upcoming.thread_id,
         }
 
+        console.log('🎯 STARTING CALL FROM UPCOMING - Call ID:', callId);
+        console.log('📋 Upcoming Call Details:', {
+          call_id: callId,
+          title: upcoming.title,
+          company: upcoming.company,
+          assistant_id: upcoming.assistant_id,
+          thread_id: upcoming.thread_id
+        });
+
         const ok = await startCall(callData, user.id)
         if (ok) {
+          console.log('✅ Successfully started call from upcoming call ID:', callId);
+          
+          // Log any uploaded files from the upcoming call
+          console.log('📁 ===== UPLOADED FILES FROM UPCOMING CALL =====');
+          console.log('📞 Call ID:', callId);
+          if (upcoming.documents && Array.isArray(upcoming.documents) && upcoming.documents.length > 0) {
+            console.log('📄 Document URLs:');
+            upcoming.documents.forEach((doc: any) => {
+              const docUrl = `https://your-supabase-project.supabase.co/storage/v1/object/public/call-documents/${doc.path}`;
+              console.log(`   - ${docUrl}`);
+
+
+
+
+
+
+
+            });
+          } else {
+            console.log('📄 Documents: No documents in this upcoming call');
+          }
+          
           try { await (await import('@/lib/upcoming-calls-manager')).UpcomingCallsManager.deleteUpcomingCall(callId) } catch {}
           try {
             const calls = await (await import('@/lib/upcoming-calls-manager')).UpcomingCallsManager.getUserUpcomingCalls(user.id)
             setUpcomingCalls(calls)
           } catch {}
+        } else {
+          console.error('❌ Failed to start call from upcoming call ID:', callId);
         }
       } catch (e) {
         console.error('Failed to auto-start call from upcoming call:', e)
@@ -438,11 +473,38 @@ export default function DashboardPage() {
         assistantId: upcoming.assistant_id,
         threadId: upcoming.thread_id,
       }
+      console.log('🎯 STARTING SELECTED UPCOMING CALL - Call ID:', selectedUpcomingId);
+      console.log('📋 Selected Call Details:', {
+        call_id: selectedUpcomingId,
+        title: upcoming.title,
+        company: upcoming.company,
+        assistant_id: upcoming.assistant_id,
+        thread_id: upcoming.thread_id
+      });
+
       const ok = await startCall(callData, user.id)
       if (ok) {
+        console.log('✅ Successfully started selected upcoming call ID:', selectedUpcomingId);
+        
+        // Log any uploaded files from the upcoming call
+        console.log('📁 ===== UPLOADED FILES FROM UPCOMING CALL =====');
+        console.log('📞 Call ID:', selectedUpcomingId);
+        console.log('Description', upcoming.description);
+        if (upcoming.documents && Array.isArray(upcoming.documents) && upcoming.documents.length > 0) {
+          console.log('📄 Document URLs:');
+          upcoming.documents.forEach((doc: any) => {
+            const docUrl = `https://your-supabase-project.supabase.co/storage/v1/object/public/call-documents/${doc.path}`;
+            console.log(`   - ${docUrl}`);
+          });
+        } else {
+          console.log('📄 Documents: No documents in this upcoming call');
+        }
+        
         setIsStartCallModalOpen(false)
         try { await UpcomingCallsManager.deleteUpcomingCall(selectedUpcomingId) } catch {}
         try { const calls = await UpcomingCallsManager.getUserUpcomingCalls(user.id); setUpcomingCalls(calls) } catch {}
+      } else {
+        console.error('❌ Failed to start selected upcoming call ID:', selectedUpcomingId);
       }
     } catch (e) {
       console.error('Failed to start from upcoming call:', e)
@@ -469,8 +531,27 @@ export default function DashboardPage() {
         attendeeEmails,
         transcriptAdminEmail: user.email || '',
       }
+      console.log('🎯 CREATING AND STARTING NEW CALL');
+      console.log('📋 New Call Details:', {
+        title: callData.title,
+        company: callData.company,
+        agenda: callData.meetingAgenda,
+        attendees: callData.attendeeEmails,
+        admin_email: callData.transcriptAdminEmail
+      });
+
       const ok = await startCall(callData, user.id)
-      if (ok) setIsStartCallModalOpen(false)
+      if (ok) {
+        console.log('✅ Successfully created and started new call');
+        
+        // Log any uploaded files associated with this call creation
+        console.log('📁 ===== UPLOADED FILES DURING CALL CREATION =====');
+        console.log('📞 Call ID:', currentCall?.call_id || 'Call ID not available yet');
+        console.log('📄 Documents: No documents uploaded during call creation');
+        setIsStartCallModalOpen(false)
+      } else {
+        console.error('❌ Failed to create and start new call');
+      }
     } catch (e) {
       console.error('Failed to create and start new call:', e)
     }
@@ -999,6 +1080,19 @@ export default function DashboardPage() {
                             </div>
                           )}
                         </div>
+
+                        {/* Screen Source Status */}
+                        {screenSources.length > 0 && selectedScreenSource && (
+                          <div className="p-2 bg-green-50 border border-green-200 rounded text-xs">
+                            <div className="flex items-center gap-1 text-green-700 mb-1">
+                              <CheckCircle className="h-3 w-3" />
+                              <span className="font-medium">Ready to Record</span>
+                            </div>
+                            <p className="text-green-600">
+                              Screen source automatically selected
+                            </p>
+                          </div>
+                        )}
 
                         {/* Error Messages */}
                         {(systemTranscriptionError || transcriptionError || discoError) && (

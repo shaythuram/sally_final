@@ -45,6 +45,210 @@ import Link from "next/link"
 import { supabase, UserProfile, Call } from "@/lib/supabase"
 import { UpcomingCallsManager, UpcomingCall } from "@/lib/upcoming-calls-manager"
 import { DocumentUploadService } from "@/lib/document-upload-service"
+import { CallManager } from "@/lib/call-management"
+import OpenAI from 'openai';
+
+// Helper function to download a file from URL and return as File object
+const downloadFile = async (url: string, filename?: string): Promise<File> => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to download file: ${response.statusText}`);
+    
+    const blob = await response.blob();
+    const name = filename || url.split('/').pop() || 'document';
+    
+    return new File([blob], name, { type: blob.type });
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    throw error;
+  }
+};
+
+// Helper function to create OpenAI thread
+const createThread = async (assistantId: string) => {
+  try {
+    const openai = new OpenAI({
+      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'your-api-key-here',
+      dangerouslyAllowBrowser: true
+    });
+
+    const thread = await openai.beta.threads.create();
+    
+    return {
+      success: true,
+      threadId: thread.id,
+      assistantId: assistantId
+    };
+  } catch (error) {
+    console.error('❌ Error creating thread:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+};
+
+// Helper function to create OpenAI assistant with File objects directly
+const createAssistantWithFiles = async (files: File[], assistantName: string, instructions: string) => {
+  try {
+    const openai = new OpenAI({
+      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'your-api-key-here',
+      dangerouslyAllowBrowser: true
+    });
+
+    // Create the assistant first
+    const assistant = await openai.beta.assistants.create({
+      name: assistantName,
+      instructions: instructions,
+      tools: [{ type: 'file_search' }],
+      model: "gpt-4o"
+    });
+
+    const assistant_id = assistant.id;
+    console.log('✅ Assistant created:', assistant_id);
+
+    // Create thread immediately after assistant creation
+    console.log('🧵 Creating thread for assistant...');
+    const threadResult = await createThread(assistant_id);
+
+    if (!threadResult.success) {
+      console.warn('⚠️ Failed to create thread:', threadResult.error);
+      // Continue with assistant creation even if thread fails
+    } else {
+      console.log('✅ Thread created successfully:', threadResult.threadId);
+    }
+
+    // Upload files directly
+    const uploadedFiles = [];
+    
+    for (const file of files) {
+      try {
+        const uploadedFile = await openai.files.create({
+          file: file,
+          purpose: 'assistants'
+        });
+        uploadedFiles.push(uploadedFile);
+      } catch (error) {
+        console.error(`Failed to process file ${file.name}:`, error);
+      }
+    }
+
+    if (uploadedFiles.length === 0) {
+      console.warn('No files were successfully uploaded');
+      return { 
+        assistant_id, 
+        thread_id: threadResult.success ? threadResult.threadId : null,
+        error: 'No files uploaded' 
+      };
+    }
+
+    // Create a vector store
+    const vectorStore = await openai.vectorStores.create({
+      name: assistantName + ' vectorstore',
+    });
+
+    const vectorStore_id = vectorStore.id;
+
+    // Add all files to vector store
+    for (const uploadedFile of uploadedFiles) {
+      await openai.vectorStores.files.create(vectorStore_id, {
+        file_id: uploadedFile.id
+      });
+    }
+
+    // Update assistant with vector store
+    await openai.beta.assistants.update(assistant_id, {
+      tool_resources: { file_search: { vector_store_ids: [vectorStore_id] } },
+    });
+
+    return {
+      assistant_id,
+      thread_id: threadResult.success ? threadResult.threadId : null, // 🎯 Include thread ID
+      vectorStore_id,
+      uploadedFiles: uploadedFiles.length
+    };
+    
+  } catch (error) {
+    console.error('❌ Error creating assistant:', error);
+    return {
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      success: false
+    };
+  }
+};
+
+// Helper function to create OpenAI assistant with file search
+const createAssistantWithFileSearch = async (docUrls: string[], assistantName: string, instructions: string) => {
+  try {
+    const openai = new OpenAI({
+      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'your-api-key-here',
+      dangerouslyAllowBrowser: true
+    });
+
+    // Create the assistant first
+    const assistant = await openai.beta.assistants.create({
+      name: assistantName,
+      instructions: instructions,
+      tools: [{ type: 'file_search' }],
+      model: "gpt-4o"
+    });
+
+    const assistant_id = assistant.id;
+
+    // Download and upload files
+    const uploadedFiles = [];
+    
+    for (const docUrl of docUrls) {
+      try {
+        const file = await downloadFile(docUrl);
+        const uploadedFile = await openai.files.create({
+          file: file,
+          purpose: 'assistants'
+        });
+        uploadedFiles.push(uploadedFile);
+      } catch (error) {
+        console.error(`Failed to process file ${docUrl}:`, error);
+      }
+    }
+
+    if (uploadedFiles.length === 0) {
+      console.warn('No files were successfully uploaded');
+      return { assistant_id, error: 'No files uploaded' };
+    }
+
+    // Create a vector store
+    const vectorStore = await openai.vectorStores.create({
+      name: assistantName + ' vectorstore',
+    });
+
+    const vectorStore_id = vectorStore.id;
+
+    // Add all files to vector store
+    for (const uploadedFile of uploadedFiles) {
+      await openai.vectorStores.files.create(vectorStore_id, {
+        file_id: uploadedFile.id
+      });
+    }
+
+    // Update assistant with vector store
+    await openai.beta.assistants.update(assistant_id, {
+      tool_resources: { file_search: { vector_store_ids: [vectorStore_id] } },
+    });
+
+    return {
+      assistant_id,
+      vectorStore_id,
+      uploadedFiles: uploadedFiles.length
+    };
+    
+  } catch (error) {
+    console.error('❌ Error creating assistant:', error);
+    return {
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      success: false
+    };
+  }
+};
 
 const callsData = [
   {
@@ -1186,6 +1390,60 @@ Best regards,`,
         
         // Update call with document information
         await UpcomingCallsManager.addDocumentsToCall(createdCall.call_id, uploadedDocuments)
+        
+        // Create OpenAI assistant with uploaded documents
+        try {
+          console.log('🤖 Creating OpenAI assistant with documents...');
+          console.log('📞 Call ID:', createdCall.call_id);
+          console.log('📄 Files uploaded:', uploadedDocuments.length);
+          
+          // Use the original uploaded files directly instead of downloading from URLs
+          if (uploadedFiles.length > 0) {
+            const assistantName = `Assistant for ${callData.title} - ${callData.company}`;
+            const instructions = callData.description
+              ? `You are a helpful assistant for this call. Use the uploaded documents and your knowledge to answer questions and assist with any call-related queries. The call description is: ${callData.description}`
+              : `You are a helpful assistant for this call. Use the uploaded documents and your knowledge to answer questions and assist with any call-related queries.`;
+            
+            const result = await createAssistantWithFiles(uploadedFiles, assistantName, instructions);
+            
+            if (result.error) {
+              console.error('❌ Failed to create assistant:', result.error);
+            } else {
+              console.log('✅ Assistant created successfully!');
+              console.log('🆔 Assistant ID:', result.assistant_id);
+              console.log('🧵 Thread ID:', result.thread_id || 'No thread created');
+              console.log('📁 Vector Store ID:', result.vectorStore_id);
+              console.log('📄 Files uploaded:', result.uploadedFiles);
+              
+              // Store the assistant_id and thread_id in the upcoming call record
+              try {
+                const updateData: any = {
+                  assistant_id: result.assistant_id
+                };
+                
+                // Only include thread_id if it was created successfully
+                if (result.thread_id) {
+                  updateData.thread_id = result.thread_id;
+                }
+                
+                await UpcomingCallsManager.updateUpcomingCall(createdCall.call_id, updateData);
+                
+                console.log('✅ Assistant ID saved to upcoming call:', createdCall.call_id);
+                if (result.thread_id) {
+                  console.log('✅ Thread ID saved to upcoming call:', result.thread_id);
+                }
+              } catch (error) {
+                console.error('❌ Failed to save assistant/thread ID to call:', error);
+              }
+            }
+          } else {
+            console.warn('⚠️ No files available for assistant creation');
+          }
+        } catch (error) {
+          console.error('❌ Error creating assistant:', error);
+        }
+      } else {
+        console.log('📄 No files uploaded - skipping assistant creation');
       }
 
       // Refresh upcoming calls list
@@ -1205,6 +1463,13 @@ Best regards,`,
   }
 
   const handleJoinCall = (call: UpcomingCall) => {
+    // Log the associated assistant ID
+    console.log('🤖 ===== JOINING CALL =====');
+    console.log('📞 Call ID:', call.call_id);
+    console.log('📋 Call Title:', call.title);
+    console.log('🏢 Company:', call.company);
+    console.log('🆔 Assistant ID:', call.assistant_id || 'No assistant ID found');
+    
     // Navigate to dashboard with call context
     router.push(`/dashboard?callId=${call.call_id}`)
   }
@@ -1718,7 +1983,7 @@ Best regards,`,
                 <AvatarFallback>
                   {userProfile?.full_name 
                     ? userProfile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
-                    : (typeof window !== 'undefined' ? localStorage.getItem('sally_fullname')?.split(' ').map(n => n[0]).join('').toUpperCase() : 'U') || 'U'
+                    : 'U'
                   }
                 </AvatarFallback>
               </Avatar>
@@ -1761,7 +2026,7 @@ Best regards,`,
                             <p className="text-xs font-medium text-gray-700 mb-1">Agenda:</p>
                             <ul className="text-xs text-gray-600 space-y-1">
                               {call.agenda.map((item, index) => (
-                                <li key={index} className="flex items-start">
+                                <li key={`agenda-${call.id}-${index}`} className="flex items-start">
                                   <span className="text-gray-400 mr-2">•</span>
                                   <span>{item}</span>
                                 </li>
@@ -1774,7 +2039,7 @@ Best regards,`,
                             <p className="text-xs font-medium text-gray-700 mb-1">Documents:</p>
                             <div className="space-y-1">
                               {call.documents.map((doc, index) => (
-                                <div key={index} className="flex items-center gap-2">
+                                <div key={`doc-${call.id}-${index}`} className="flex items-center gap-2">
                                   <FileText className="h-3 w-3 text-gray-400" />
                                   <span className="text-xs text-gray-600">{doc.name}</span>
                                   <span className="text-xs text-gray-400">({(doc.size / 1024 / 1024).toFixed(1)} MB)</span>
@@ -1988,7 +2253,7 @@ Best regards,`,
                         <div className="space-y-1">
                           {call.documents.slice(0, 2).map((doc, index) => (
                             <button
-                              key={index}
+                              key={`doc-button-${call.id}-${index}`}
                               onClick={(e) => { e.stopPropagation(); handleViewDocument(doc) }}
                               className="flex items-center justify-between w-full p-2 text-xs bg-gray-50 hover:bg-gray-100 rounded border text-left transition-colors"
                             >
@@ -2014,7 +2279,7 @@ Best regards,`,
                         <p className="text-xs font-medium text-gray-700 mb-1">Agenda:</p>
                         <ul className="text-xs text-gray-600 space-y-1">
                           {(call.meeting_agenda as any).slice(0, 3).map((item: string, idx: number) => (
-                            <li key={idx} className="flex items-start">
+                            <li key={`agenda-item-${call.id}-${idx}`} className="flex items-start">
                               <span className="text-gray-400 mr-2">•</span>
                               <span>{item}</span>
                             </li>
@@ -2034,7 +2299,7 @@ Best regards,`,
                       {call.labels && call.labels.length > 0 && (
                         <div className="flex items-center gap-1 flex-wrap">
                           {call.labels.slice(0, expandedLabels[call.id] ? call.labels.length : 3).map((label, index) => (
-                            <div key={index} className="group relative">
+                            <div key={`label-${call.id}-${index}`} className="group relative">
                               <div
                                 className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getLabelStyles(label.color).bg} ${getLabelStyles(label.color).text} ${getLabelStyles(label.color).border}`}
                               >
@@ -2248,7 +2513,7 @@ Best regards,`,
                     <div className="space-y-1">
                       {call.documents.slice(0, 2).map((doc, index) => (
                         <button
-                          key={index}
+                          key={`doc-button-2-${call.id}-${index}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             handleViewDocument(doc)
@@ -2281,7 +2546,7 @@ Best regards,`,
                   {call.labels && call.labels.length > 0 && (
                     <div className="flex items-center gap-1 flex-wrap">
                       {call.labels.slice(0, expandedLabels[call.id] ? call.labels.length : 3).map((label, index) => (
-                        <div key={index} className="group relative">
+                        <div key={`label-2-${call.id}-${index}`} className="group relative">
                           <div
                             className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getLabelStyles(label.color).bg} ${getLabelStyles(label.color).text} ${getLabelStyles(label.color).border}`}
                           >
@@ -2422,7 +2687,7 @@ Best regards,`,
                   {newCall.agenda.length > 0 && (
                     <div className="space-y-1">
                       {newCall.agenda.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                        <div key={`new-agenda-${index}`} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
                           <span className="text-sm text-gray-700">{index + 1}. {item}</span>
                           <Button
                             variant="ghost"
@@ -2469,7 +2734,7 @@ Best regards,`,
                   <div className="mt-3 space-y-2">
                     <p className="text-sm font-medium text-gray-700">Uploaded Files:</p>
                     {uploadedFiles.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                      <div key={`uploaded-file-${index}`} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
                         <div className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-gray-400" />
                           <span className="text-sm text-gray-700">{file.name}</span>
@@ -2682,7 +2947,7 @@ Best regards,`,
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="space-y-6">
                   {currentTranscript.entries.map((entry, index) => (
-                    <div key={index} className="flex gap-4">
+                    <div key={`transcript-entry-${index}`} className="flex gap-4">
                       <div className="text-sm text-gray-500 font-mono w-20 flex-shrink-0">{entry.timestamp}</div>
                       <div className="flex-1">
                         <div className="font-medium text-gray-900 mb-1">
@@ -2700,7 +2965,7 @@ Best regards,`,
                               const cleanWord = word.replace(/[.,!?]/g, "")
                               const isUncertain = entry.uncertainWords.includes(cleanWord.toLowerCase())
                               return (
-                                <span key={wordIndex} className={isUncertain ? "bg-yellow-200 px-1 rounded" : ""}>
+                                <span key={`word-${index}-${wordIndex}`} className={isUncertain ? "bg-yellow-200 px-1 rounded" : ""}>
                                   {word}{" "}
                                 </span>
                               )
@@ -2796,7 +3061,7 @@ Best regards,`,
 
             <div className="space-y-4">
               {Object.keys(speakerNames).map((originalName) => (
-                <div key={originalName} className="space-y-2">
+                <div key={`speaker-${originalName}`} className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">{originalName}</label>
                   <Input
                     value={tempSpeakerNames[originalName] || speakerNames[originalName]}
@@ -3059,7 +3324,7 @@ Best regards,`,
                   <div className="space-y-2">
                     {selectedCallForDetails.documents.map((doc: any, index: number) => (
                       <button
-                        key={index}
+                        key={`detail-doc-${index}`}
                         onClick={() => handleViewDocument(doc)}
                         className="flex items-center justify-between w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border text-left transition-colors"
                       >
