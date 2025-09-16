@@ -985,6 +985,7 @@ Best regards,`,
     totalTasks: c.total_tasks ?? 0,
     pendingTasks: c.pending_tasks ?? 0,
     aiSummary: c.ai_summary ?? '',
+    post_call_actions: (c as any).post_call_actions ?? null,
     documents: [],
     owner: 'You',
     labels: (c as any).labels || [],
@@ -1021,6 +1022,23 @@ Best regards,`,
   const [editableNotes, setEditableNotes] = useState(null)
   const [isEditingNotes, setIsEditingNotes] = useState(false)
   const [expandedLabels, setExpandedLabels] = useState<{ [key: string]: boolean }>({})
+  const [aiGeneratingActionIdx, setAiGeneratingActionIdx] = useState<number | null>(null)
+
+  // Add Members modal state
+  const [isAddMembersOpen, setIsAddMembersOpen] = useState(false)
+  const [targetCallIdForMembers, setTargetCallIdForMembers] = useState<string | null>(null)
+  const [inviteBy, setInviteBy] = useState<'email' | 'username'>('email')
+  const [inviteValue, setInviteValue] = useState('')
+  const [role, setRole] = useState<'admin' | 'editor' | 'viewer'>('viewer')
+  const [isSavingPermission, setIsSavingPermission] = useState(false)
+
+  const openAddMembers = (callId: string) => {
+    setTargetCallIdForMembers(callId)
+    setInviteBy('email')
+    setInviteValue('')
+    setRole('viewer')
+    setIsAddMembersOpen(true)
+  }
 
   const [isReportOpen, setIsReportOpen] = useState(false)
   const [selectedCallForReport, setSelectedCallForReport] = useState<any>(null)
@@ -1064,14 +1082,110 @@ Best regards,`,
   const [aiGenerationModal, setAiGenerationModal] = useState<{
     isOpen: boolean
     action: string
-    type: "email" | "report"
+    type: string
     content: string
+    actionButton: "send" | "download" | "copy"
   }>({
     isOpen: false,
     action: "",
-    type: "email",
+    type: "Report",
     content: "",
+    actionButton: "download",
   })
+
+  // Extract overview from AI summary JSON if present
+  const getAiSummaryOverview = (summary: any): string => {
+    try {
+      if (!summary) return ''
+      // If it's already an object, use it; else try to parse
+      const obj = typeof summary === 'string' ? JSON.parse(summary) : summary
+      if (obj && typeof obj === 'object' && typeof obj.overview === 'string') {
+        return obj.overview
+      }
+      // Fallback: if summary is string but not JSON
+      return typeof summary === 'string' ? summary : ''
+    } catch {
+      // If parsing fails, show raw text
+      return typeof summary === 'string' ? summary : ''
+    }
+  }
+
+  // Save permissions to Supabase
+  const saveCallPermission = async () => {
+    if (!targetCallIdForMembers || !inviteValue.trim()) return
+    try {
+      setIsSavingPermission(true)
+      // Resolve uid by email/username
+      let invitedUid: string | null = null
+      if (inviteBy === 'email') {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('uid')
+          .eq('email', inviteValue.trim())
+          .single()
+        // PGRST116 = no rows found; treat as not found
+        if (!error || (error as any).code === 'PGRST116') {
+          invitedUid = data?.uid || null
+        } else {
+          throw error
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('uid')
+          .eq('username', inviteValue.trim())
+          .single()
+        if (!error || (error as any).code === 'PGRST116') {
+          invitedUid = data?.uid || null
+        } else {
+          throw error
+        }
+      }
+
+      // Owner is current user
+      if (!user) throw new Error('User not authenticated')
+
+      // Prepare field to set
+      const roleField = role === 'admin' ? 'admin' : role === 'editor' ? 'editor' : 'viewer'
+
+      // If no invited uid resolved, we still create/ensure base row with owner
+      const basePayload: any = { call_id: targetCallIdForMembers, owner: user.id }
+      if (invitedUid) basePayload[roleField] = invitedUid
+
+      // Check if row exists
+      const { data: existing, error: selErr } = await supabase
+        .from('call_permissions')
+        .select('call_id, owner')
+        .eq('call_id', targetCallIdForMembers)
+        .single()
+
+      if (selErr && (selErr as any).code !== 'PGRST116') throw selErr
+
+      if (!existing) {
+        // Insert new row
+        const { error: insErr } = await supabase
+          .from('call_permissions')
+          .insert(basePayload)
+        if (insErr) throw insErr
+      } else {
+        // Update specific role column (and ensure owner is current user)
+        const updatePayload: any = { owner: user.id }
+        if (invitedUid) updatePayload[roleField] = invitedUid
+        const { error: updErr } = await supabase
+          .from('call_permissions')
+          .update(updatePayload)
+          .eq('call_id', targetCallIdForMembers)
+        if (updErr) throw updErr
+      }
+
+      setIsAddMembersOpen(false)
+    } catch (e) {
+      console.error('Failed to save call permission:', e)
+      alert('Failed to save permissions')
+    } finally {
+      setIsSavingPermission(false)
+    }
+  }
 
   const labelColors = [
     { name: "Blue", value: "blue", bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
@@ -1385,48 +1499,81 @@ Best regards,`,
     setIsRelabelOpen(false)
   }
 
-  const handleAIGeneration = (actionText: string) => {
-    // Determine if it's an email or report based on action text
-    const isEmail = actionText.toLowerCase().includes("email") || actionText.toLowerCase().includes("send")
-    const type = isEmail ? "email" : "report"
+  // Simple markdown renderer for AI content
+  const renderMarkdown = (text: string) => {
+    return text
+      .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mb-4">$1</h1>')
+      .replace(/^## (.+)$/gm, '<h2 class="text-xl font-semibold mb-3 mt-6">$1</h2>')
+      .replace(/^### (.+)$/gm, '<h3 class="text-lg font-medium mb-2 mt-4">$1</h3>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em class="italic">$1</em>')
+      .replace(/^- (.+)$/gm, '<li class="ml-4">• $1</li>')
+      .replace(/^\d+\. (.+)$/gm, '<li class="ml-4">$1</li>')
+      .replace(/\n\n/g, '</p><p class="mb-4">')
+      .replace(/\n/g, '<br>')
+      .replace(/^(.+)$/gm, '<p class="mb-4">$1</p>')
+  }
 
-    // Generate mock content based on action
-    let content = ""
-    if (actionText.includes("zero-downtime integration playbook")) {
-      content = isEmail
-        ? `Subject: Zero-Downtime Integration Playbook for Dell Operations\n\nDear Dell Team,\n\nFollowing our successful AI-WOP demo, I'm pleased to share our comprehensive zero-downtime integration playbook. This document outlines our proven methodology for seamless system integration without service interruption.\n\nKey highlights:\n• Step-by-step integration process\n• Risk mitigation strategies\n• Rollback procedures\n• Performance monitoring guidelines\n\nPlease review and let me know if you have any questions.\n\nBest regards,\nAkshith`
-        : "Zero-Downtime Integration Playbook - A comprehensive guide covering integration strategies, risk assessment, and implementation procedures for enterprise systems."
-    } else if (actionText.includes("case-study summary")) {
-      content = isEmail
-        ? `Subject: Recent Case Study Summary - AI-WOP Implementation Success\n\nDear Dell Team,\n\nI wanted to share a recent case study that demonstrates the effectiveness of our AI-WOP platform in similar enterprise environments.\n\nCase Study Highlights:\n• 40% reduction in processing time\n• 99.9% uptime maintained during integration\n• ROI achieved within 6 months\n• Seamless integration with existing infrastructure\n\nThis case study closely mirrors your current requirements and showcases the potential impact for Dell operations.\n\nLet's schedule a follow-up to discuss implementation details.\n\nBest regards,\nAkshith`
-        : "Case Study Summary Report - Detailed analysis of recent AI-WOP implementation showing 40% efficiency gains and successful enterprise integration."
-    } else if (actionText.includes("KPI baseline template")) {
-      content = isEmail
-        ? `Subject: KPI Baseline Template from Previous Pilot Programs\n\nDear Dell Team,\n\nAs discussed in our demo, I'm sharing the KPI baseline template we've successfully used in previous pilot implementations.\n\nThis template includes:\n• Performance metrics framework\n• Baseline measurement criteria\n• Success indicators\n• Monitoring dashboards\n• Reporting schedules\n\nThis template has been refined through multiple enterprise deployments and will help establish clear success metrics for your AI-WOP implementation.\n\nPlease review and let me know if you'd like to customize any metrics for Dell's specific requirements.\n\nBest regards,\nAkshith`
-        : "KPI Baseline Template - Comprehensive metrics framework used in previous pilot programs with performance indicators and measurement criteria."
-    } else if (actionText.includes("Gantt chart")) {
-      content = isEmail
-        ? `Subject: Six-Week Implementation Gantt Chart for AI-WOP Deployment\n\nDear Dell Team,\n\nPlease find attached the detailed six-week Gantt chart for your AI-WOP implementation project.\n\nProject Timeline Overview:\n• Week 1-2: Infrastructure assessment and preparation\ project.\n\nProject Timeline Overview:\n• Week 1-2: Infrastructure assessment and preparation
-• Week 3-4: System integration and configuration
-• Week 5: Testing and validation
-• Week 6: Go-live and monitoring\n\nEach phase includes specific deliverables, dependencies, and milestone checkpoints. The timeline accounts for Dell's operational requirements and minimizes business disruption.\n\nLet's schedule a project kickoff meeting to review the timeline in detail.\n\nBest regards,\nAkshith`
-        : "Six-Week Implementation Gantt Chart - Detailed project timeline with phases, milestones, and deliverables for AI-WOP deployment."
-    } else if (actionText.includes("latency benchmarks")) {
-      content = isEmail
-        ? `Subject: Latency Benchmark Results - AI-WOP Performance Data\n\nDear Dell Team,\n\nAs requested during our demo, here are the comprehensive latency benchmark results from our AI-WOP platform testing.\n\nBenchmark Results:\n• Average response time: 45ms\n• 95th percentile: 120ms\n• 99th percentile: 200ms\n• Peak throughput: 10,000 requests/second\n• Zero timeout errors under normal load\n\nThese benchmarks were conducted under enterprise-grade conditions similar to Dell's operational environment. The results demonstrate our platform's ability to meet your strict performance requirements.\n\nI'm happy to discuss these results and answer any technical questions.\n\nBest regards,\nAkshith`
-        : "Latency Benchmark Report - Comprehensive performance testing results showing response times, throughput metrics, and system reliability data."
-    } else if (actionText.includes("compliance letters")) {
-      content = isEmail
-        ? `Subject: Compliance Documentation for AI-WOP Implementation\n\nDear Dell Team,\n\nFollowing our discussion about compliance requirements, I'm providing the necessary compliance documentation for AI-WOP implementation.\n\nCompliance Coverage:\n• SOC 2 Type II certification\n• GDPR compliance documentation\n• ISO 27001 security standards\n• Industry-specific regulatory requirements\n• Data privacy and protection protocols\n\nAll documentation has been reviewed by our legal and compliance teams to ensure full adherence to Dell's security and regulatory standards.\n\nPlease review and let me know if additional compliance documentation is required.\n\nBest regards,\nAkshith`
-        : "Compliance Documentation Package - Complete regulatory compliance materials including certifications, security standards, and privacy protocols."
+  const handleAIGeneration = async (actionText: string, idx?: number) => {
+    try {
+      if (typeof idx === 'number') setAiGeneratingActionIdx(idx)
+      const callId = selectedCallForDetails?.id || selectedCallForDetails?.call_id
+      if (!callId) return
+      const { data, error } = await supabase
+        .from('calls')
+        .select('assistant_id, thread_id')
+        .eq('call_id', callId)
+        .single()
+      if (error) { console.error('Fetch ids error:', error); return }
+      const assistantId = (data as any)?.assistant_id
+      const threadId = (data as any)?.thread_id
+      if (!assistantId || !threadId) { console.warn('Missing assistant/thread id'); return }
+      
+      const resp = await fetch('http://localhost:8000/api/ai-complete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_item: actionText, assistantId, threadId })
+      })
+      
+      const json = await resp.json().catch(() => null)
+      console.log('AI complete response:', json ?? await resp.text())
+      
+      // Parse response and show in modal
+      let content = ""
+      let tag: string | undefined = undefined
+      let actionButton: "send" | "download" | "copy" = "download"
+      
+      if (json && json.content) {
+        content = json.content
+        tag = json.tag
+      } else {
+        content = `Error generating content: ${json?.error || 'Unknown error'}`
+      }
+
+      const normalizedTag = (tag || "Report").toString()
+      if (normalizedTag === "Email") actionButton = "send"
+      else if (normalizedTag === "Report") actionButton = "download"
+      else if (normalizedTag === "Answer" || normalizedTag === "Powerpoint") actionButton = "copy"
+      else actionButton = "download"
+      
+      setAiGenerationModal({
+        isOpen: true,
+        action: actionText,
+        type: normalizedTag,
+        content,
+        actionButton,
+      })
+    } catch (e) {
+      console.error('AI generation error:', e)
+      setAiGenerationModal({
+        isOpen: true,
+        action: actionText,
+        type: "Report",
+        content: `Error generating content: ${e instanceof Error ? e.message : 'Unknown error'}`,
+        actionButton: "download",
+      })
+    } finally {
+      setAiGeneratingActionIdx(null)
     }
-
-    setAiGenerationModal({
-      isOpen: true,
-      action: actionText,
-      type,
-      content,
-    })
   }
 
   const handleDownload = () => {
@@ -1434,7 +1581,7 @@ Best regards,`,
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `${aiGenerationModal.action.replace(/[^a-zA-Z0-9]/g, "_")}.${aiGenerationModal.type === "email" ? "eml" : "txt"}`
+    a.download = `${aiGenerationModal.action.replace(/[^a-zA-Z0-9]/g, "_")}.${aiGenerationModal.type === "Email" ? "eml" : "txt"}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1447,7 +1594,7 @@ Best regards,`,
     } else {
       // Existing AI generation email send
       alert("Email sent successfully!")
-      setAiGenerationModal({ isOpen: false, action: "", type: "email", content: "" })
+      setAiGenerationModal({ isOpen: false, action: "", type: "Report", content: "", actionButton: "download" })
     }
   }
 
@@ -1935,7 +2082,8 @@ Best regards,`,
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem>View Details</DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewTranscript(call.id) }}>Open Transcript</DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleSendEmail(call.id) }}>Send Follow-up</DropdownMenuItem>
+                          {/** Temporarily disable Send Follow-up */}
+                          {/* <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleSendEmail(call.id) }}>Send Follow-up</DropdownMenuItem> */}
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRenameCall(call.id) }}>
                             <Edit3 className="h-4 w-4 mr-2" />
                             Rename Call
@@ -1944,12 +2092,18 @@ Best regards,`,
                             <Tag className="h-4 w-4 mr-2" />
                             Add Label
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openAddMembers(call.id) }}>
+                            <Users className="h-4 w-4 mr-2" />
+                            Add Members
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
 
                     {/* Action Buttons (same as Recent Calls) */}
                     <div className="grid grid-cols-2 gap-2 mb-4">
+                      {/** Temporarily hide Send Email button */}
+                      {/*
                       <Button
                         variant="outline"
                         size="sm"
@@ -1962,6 +2116,7 @@ Best regards,`,
                         <Mail className="h-3 w-3" />
                         <span className="truncate">Send Email</span>
                       </Button>
+                      */}
 
                       <Button
                         variant="outline"
@@ -2038,14 +2193,14 @@ Best regards,`,
                       </div>
                     </div>
 
-                    {/* AI Summary */}
+                    {/* AI Summary (overview only) */}
                     {call.aiSummary && (
                       <div className="mb-2">
                         <div className="flex items-center gap-2 mb-2">
                           <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
                           <span className="text-sm font-medium text-gray-700">AI Summary</span>
                         </div>
-                        <p className="text-sm text-gray-600 leading-relaxed">{call.aiSummary}</p>
+                        <p className="text-sm text-gray-600 leading-relaxed">{getAiSummaryOverview(call.aiSummary)}</p>
                       </div>
                     )}
 
@@ -2209,8 +2364,7 @@ Best regards,`,
 
                 {/* Action Buttons */}
                 <div className="grid grid-cols-2 gap-2 mb-4">
-                  {/* Send Email button temporarily disabled */}
-                  {/*
+                  {/* Update Send Email button in call cards to open email modal */}
                   <Button
                     variant="outline"
                     size="sm"
@@ -2223,7 +2377,6 @@ Best regards,`,
                     <Mail className="h-3 w-3" />
                     <span className="truncate">Send Email</span>
                   </Button>
-                  */}
 
                   <Button
                     variant="outline"
@@ -2741,6 +2894,54 @@ Best regards,`,
         </div>
       )}
 
+      {/* Add Members Modal */}
+      {isAddMembersOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsAddMembersOpen(false)} />
+
+          <div className="relative bg-white rounded-lg shadow-2xl w-[420px] max-w-[90vw]">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Add Members</h2>
+              <Button variant="ghost" size="sm" onClick={() => setIsAddMembersOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant={inviteBy === 'email' ? 'default' : 'outline'} onClick={() => setInviteBy('email')}>By Email</Button>
+                <Button variant={inviteBy === 'username' ? 'default' : 'outline'} onClick={() => setInviteBy('username')}>By Username</Button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{inviteBy === 'email' ? 'Email' : 'Username'}</label>
+                <Input
+                  value={inviteValue}
+                  onChange={(e) => setInviteValue(e.target.value)}
+                  placeholder={inviteBy === 'email' ? 'name@example.com' : 'username'}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Permission</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button variant={role === 'admin' ? 'default' : 'outline'} onClick={() => setRole('admin')}>Admin</Button>
+                  <Button variant={role === 'editor' ? 'default' : 'outline'} onClick={() => setRole('editor')}>Edit</Button>
+                  <Button variant={role === 'viewer' ? 'default' : 'outline'} onClick={() => setRole('viewer')}>Viewer</Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+              <Button variant="outline" onClick={() => setIsAddMembersOpen(false)}>Cancel</Button>
+              <Button onClick={saveCallPermission} disabled={isSavingPermission || !inviteValue.trim()}>
+                {isSavingPermission ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isTranscriptOpen && currentTranscript && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           {/* Blurred Background Overlay */}
@@ -3015,113 +3216,41 @@ Best regards,`,
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-3">Follow-up Actions</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="action-1"
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="action-1" className="text-sm text-gray-700 flex-1">
-                      Send zero-downtime integration playbook
-                    </label>
-                    <button
-                      onClick={() => handleAIGeneration("Send zero-downtime integration playbook")}
-                      className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-                      title="Generate with AI"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="action-2"
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="action-2" className="text-sm text-gray-700 flex-1">
-                      Send recent case-study summary to Dell team
-                    </label>
-                    <button
-                      onClick={() => handleAIGeneration("Send recent case-study summary to Dell team")}
-                      className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-                      title="Generate with AI"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="action-3"
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="action-3" className="text-sm text-gray-700 flex-1">
-                      Email KPI baseline template used in previous pilots
-                    </label>
-                    <button
-                      onClick={() => handleAIGeneration("Email KPI baseline template used in previous pilots")}
-                      className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-                      title="Generate with AI"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="action-4"
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="action-4" className="text-sm text-gray-700 flex-1">
-                      Email six-week Gantt chart
-                    </label>
-                    <button
-                      onClick={() => handleAIGeneration("Email six-week Gantt chart")}
-                      className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-                      title="Generate with AI"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="action-5"
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="action-5" className="text-sm text-gray-700 flex-1">
-                      Send latency benchmarks
-                    </label>
-                    <button
-                      onClick={() => handleAIGeneration("Send latency benchmarks")}
-                      className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-                      title="Generate with AI"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="action-6"
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="action-6" className="text-sm text-gray-700 flex-1">
-                      Send compliance letters
-                    </label>
-                    <button
-                      onClick={() => handleAIGeneration("Send compliance letters")}
-                      className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
-                      title="Generate with AI"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                    </button>
-                  </div>
+                  {(() => {
+                    try {
+                      const actionsObj = typeof selectedCallForDetails.post_call_actions === 'string'
+                        ? JSON.parse(selectedCallForDetails.post_call_actions)
+                        : selectedCallForDetails.post_call_actions
+                      const items: string[] = Array.isArray(actionsObj?.actionItems) ? actionsObj.actionItems : []
+                      if (items.length === 0) return null
+                      return items.map((text: string, idx: number) => (
+                        <div key={idx} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                          <input
+                            type="checkbox"
+                            id={`action-${idx}`}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <label htmlFor={`action-${idx}`} className="text-sm text-gray-700 flex-1">
+                            {text.replace(/^\d+\.\s*/, '')}
+                          </label>
+                          <button
+                            onClick={() => handleAIGeneration(text.replace(/^\d+\.\s*/, ''), idx)}
+                            className={`p-1.5 rounded-md transition-colors ${aiGeneratingActionIdx === idx ? 'text-purple-600 bg-purple-50' : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50'}`}
+                            title="Generate with AI"
+                            disabled={aiGeneratingActionIdx === idx}
+                          >
+                            {aiGeneratingActionIdx === idx ? (
+                              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeOpacity=".25"/><path d="M22 12a10 10 0 0 1-10 10"/></svg>
+                            ) : (
+                              <Sparkles className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      ))
+                    } catch {
+                      return null
+                    }
+                  })()}
                 </div>
               </div>
 
@@ -3151,8 +3280,59 @@ Best regards,`,
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                   <h3 className="text-lg font-medium text-gray-900">AI Summary</h3>
                 </div>
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <p className="text-gray-700 leading-relaxed">{selectedCallForDetails.aiSummary}</p>
+                <div className="bg-blue-50 rounded-lg p-4 space-y-3">
+                  {(() => {
+                    try {
+                      const obj = typeof selectedCallForDetails.aiSummary === 'string'
+                        ? JSON.parse(selectedCallForDetails.aiSummary)
+                        : selectedCallForDetails.aiSummary
+                      if (!obj || typeof obj !== 'object') {
+                        return <p className="text-gray-700 leading-relaxed">{String(selectedCallForDetails.aiSummary || '')}</p>
+                      }
+                      return (
+                        <div className="space-y-3">
+                          {obj.overview && (
+                            <div>
+                              <div className="text-sm sm:text-base font-semibold text-gray-900 mb-1">Overview</div>
+                              <p className="text-gray-700 leading-relaxed">{obj.overview}</p>
+                            </div>
+                          )}
+                          {Array.isArray(obj.keyPoints) && obj.keyPoints.length > 0 && (
+                            <div>
+                              <div className="text-sm sm:text-base font-semibold text-gray-900 mb-1">Key Points</div>
+                              <ul className="list-disc pl-5 space-y-1 text-gray-700">
+                                {obj.keyPoints.map((kp: string, idx: number) => (
+                                  <li key={idx}>{kp.replace(/^[-\s]+/, '')}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {Array.isArray(obj.outcomes) && obj.outcomes.length > 0 && (
+                            <div>
+                              <div className="text-sm sm:text-base font-semibold text-gray-900 mb-1">Outcomes</div>
+                              <ul className="list-disc pl-5 space-y-1 text-gray-700">
+                                {obj.outcomes.map((oc: string, idx: number) => (
+                                  <li key={idx}>{oc.replace(/^[-\s]+/, '')}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {Array.isArray(obj.nextSteps) && obj.nextSteps.length > 0 && (
+                            <div>
+                              <div className="text-sm sm:text-base font-semibold text-gray-900 mb-1">Next Steps</div>
+                              <ul className="list-disc pl-5 space-y-1 text-gray-700">
+                                {obj.nextSteps.map((ns: string, idx: number) => (
+                                  <li key={idx}>{ns.replace(/^[-\s]+/, '')}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    } catch {
+                      return <p className="text-gray-700 leading-relaxed">{String(selectedCallForDetails.aiSummary || '')}</p>
+                    }
+                  })()}
                 </div>
               </div>
 
@@ -3238,7 +3418,7 @@ Best regards,`,
                 <p className="text-sm text-gray-600 mt-1">{aiGenerationModal.action}</p>
               </div>
               <button
-                onClick={() => setAiGenerationModal({ isOpen: false, action: "", type: "email", content: "" })}
+                onClick={() => setAiGenerationModal({ isOpen: false, action: "", type: "Report", content: "", actionButton: "download" })}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X className="h-6 w-6" />
@@ -3253,39 +3433,46 @@ Best regards,`,
                     Generated {aiGenerationModal.type === "email" ? "Email" : "Report"}
                   </span>
                 </div>
+                <div className="border border-gray-300 rounded-lg p-4 min-h-96 bg-gray-50">
+                  <div 
+                    className="prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(aiGenerationModal.content) }}
+                  />
+                </div>
                 <textarea
                   value={aiGenerationModal.content}
                   onChange={(e) => setAiGenerationModal((prev) => ({ ...prev, content: e.target.value }))}
-                  className="w-full h-96 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Generated content will appear here..."
+                  className="w-full h-32 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-4"
+                  placeholder="Edit the raw content here..."
                 />
               </div>
             </div>
 
             <div className="flex items-center justify-between p-6 border-t bg-gray-50">
               <div className="text-sm text-gray-600">
-                You can edit the content above before {aiGenerationModal.type === "email" ? "sending" : "downloading"}
+                You can edit the content above before {aiGenerationModal.actionButton === "send" ? "sending" : aiGenerationModal.actionButton === "copy" ? "copying" : "downloading"}
               </div>
               <div className="flex space-x-3">
                 <button
-                  onClick={() => setAiGenerationModal({ isOpen: false, action: "", type: "email", content: "" })}
+                  onClick={() => setAiGenerationModal({ isOpen: false, action: "", type: "Report", content: "", actionButton: "download" })}
                   className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                 >
                   Cancel
                 </button>
-                {aiGenerationModal.type === "email" ? (
-                  <button
-                    onClick={handleSendEmail}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
-                  >
+                {aiGenerationModal.actionButton === "send" && (
+                  <button onClick={handleSendEmail} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2">
                     <Mail className="h-4 w-4" />
                     <span>Send Email</span>
                   </button>
-                ) : (
-                  <button
-                    onClick={handleDownload}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2"
-                  >
+                )}
+                {aiGenerationModal.actionButton === "copy" && (
+                  <button onClick={() => navigator.clipboard.writeText(aiGenerationModal.content)} className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 flex items-center space-x-2">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span>Copy</span>
+                  </button>
+                )}
+                {aiGenerationModal.actionButton === "download" && (
+                  <button onClick={handleDownload} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2">
                     <Download className="h-4 w-4" />
                     <span>Download</span>
                   </button>

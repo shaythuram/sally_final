@@ -173,3 +173,30 @@ CREATE INDEX IF NOT EXISTS idx_call_documents_call_id ON call_documents(call_id)
 CREATE INDEX IF NOT EXISTS idx_call_documents_owner_id ON call_documents(owner_id);
 
 
+
+-- 6) Call permissions table
+CREATE TABLE IF NOT EXISTS call_permissions (
+  call_id UUID PRIMARY KEY REFERENCES calls(call_id) ON DELETE CASCADE,
+  owner UUID NOT NULL REFERENCES user_profiles(uid) ON DELETE CASCADE,
+  admin UUID NULL REFERENCES user_profiles(uid) ON DELETE SET NULL,
+  editor UUID NULL REFERENCES user_profiles(uid) ON DELETE SET NULL,
+  viewer UUID NULL REFERENCES user_profiles(uid) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE call_permissions ENABLE ROW LEVEL SECURITY;
+
+-- Allow owner to manage their call permissions row
+CREATE POLICY "select_call_permissions_owner"
+ON call_permissions FOR SELECT TO authenticated
+USING (auth.uid() = owner);
+
+CREATE POLICY "insert_call_permissions_owner"
+ON call_permissions FOR INSERT TO authenticated
+WITH CHECK (auth.uid() = owner);
+
+CREATE POLICY "update_call_permissions_owner"
+ON call_permissions FOR UPDATE TO authenticated
+USING (auth.uid() = owner)
+WITH CHECK (auth.uid() = owner);
