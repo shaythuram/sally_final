@@ -177,6 +177,7 @@ const getDiscoPanelData = (discoData: any) => {
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [showAllPanels, setShowAllPanels] = useState(true)
   const [isContentProtected, setIsContentProtected] = useState(false)
   const [isTranscriptionVisible, setIsTranscriptionVisible] = useState(true)
@@ -265,7 +266,7 @@ export default function DashboardPage() {
 
   // Auto-start call if navigated with callId from Upcoming Calls
   const searchParams = useSearchParams()
-  const router = useRouter()
+  // router already declared above
   useEffect(() => {
     const maybeStartCall = async () => {
       try {
@@ -811,7 +812,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-600">What would you like to do next?</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <Button onClick={downloadLastRecording} variant="outline">Download Recording</Button>
-                  <Button onClick={() => { setIsPostCallModalOpen(false); router.push('/dashboard?view=recent') }}>Go to Recent Calls</Button>
+                  <Button onClick={() => { setIsPostCallModalOpen(false); router.push('/?view=recent') }}>Go to Recent Calls</Button>
                 </div>
               </div>
             </DialogContent>

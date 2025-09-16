@@ -11,12 +11,17 @@ export class AudioUploadService {
       const { data, error } = await supabase.storage
         .from('call-recordings')
         .upload(filePath, audioBlob, {
-          contentType: 'audio/webm',
+          contentType: (audioBlob as any)?.type || 'audio/webm',
           upsert: false
         })
       
       if (error) {
-        console.error('Error uploading audio:', error)
+        console.error('Error uploading audio:', {
+          message: (error as any).message,
+          name: (error as any).name,
+          status: (error as any).statusCode || (error as any).status,
+          filePath,
+        })
         return null
       }
       
