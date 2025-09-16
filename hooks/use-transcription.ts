@@ -397,6 +397,117 @@ export const useTranscription = () => {
       await CallManager.updateCallSummary(currentCall.call_id, aiSummary);
       await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
       
+      // Fire post-call steps API
+      try {
+        console.log('\ud83d\ude80 ===== FIRING POST-CALL STEPS API =====');
+        
+        // Prepare conversation transcript
+        const conversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+        
+        // Prepare request body
+        const postCallRequestBody: any = {
+          conversation: conversationText,
+          discoAnalysis: formattedDiscoData,
+          genieSupport: splitGenieContent
+        };
+        
+        // Only include assistantId and threadId if they exist
+        if (currentCall?.assistant_id) {
+          postCallRequestBody.assistantId = currentCall.assistant_id;
+          console.log('\u2705 Including assistant ID:', currentCall.assistant_id);
+        }
+        
+        if (currentCall?.thread_id) {
+          postCallRequestBody.threadId = currentCall.thread_id;
+          console.log('\u2705 Including thread ID:', currentCall.thread_id);
+        }
+        
+        console.log('\ud83d\udce4 Post-call request data:', JSON.stringify(postCallRequestBody, null, 2));
+        
+        // Make API call
+        const response = await fetch('http://localhost:8000/api/post-call-steps', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(postCallRequestBody),
+        });
+        
+        console.log('\ud83d\udce1 Post-call API response status:', response.status);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+        }
+        
+        const postCallResult = await response.json();
+        console.log('\ud83d\udce5 Post-call API response:', JSON.stringify(postCallResult, null, 2));
+        
+        // Store the response in post_call_actions column
+        await CallManager.updateCallActions(currentCall.call_id, postCallResult);
+        console.log('\u2705 Post-call actions saved to database');
+        
+      } catch (error) {
+        console.error('\u274c Error in post-call steps API:', error);
+        // Don't fail the call end process if post-call API fails
+      }
+      
+      // Fire AI summary API call
+      try {
+        console.log('\ud83e\udd16 ===== FIRING AI SUMMARY API =====');
+        
+        // Prepare conversation transcript for AI summary
+        const aiSummaryConversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+        
+        // Use the same request body as post-call steps
+        const aiSummaryRequestBody: any = {
+          conversation: aiSummaryConversationText,
+          discoAnalysis: formattedDiscoData,
+          genieSupport: splitGenieContent
+        };
+        
+        // Only include assistantId and threadId if they exist
+        if (currentCall?.assistant_id) {
+          aiSummaryRequestBody.assistantId = currentCall.assistant_id;
+          console.log('\u2705 Including assistant ID for AI summary:', currentCall.assistant_id);
+        }
+        
+        if (currentCall?.thread_id) {
+          aiSummaryRequestBody.threadId = currentCall.thread_id;
+          console.log('\u2705 Including thread ID for AI summary:', currentCall.thread_id);
+        }
+        
+        console.log('\ud83d\udce4 AI Summary request body:', JSON.stringify(aiSummaryRequestBody, null, 2));
+        
+        // Make API call
+        const aiSummaryResponse = await fetch('http://localhost:8000/api/ai-summary', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(aiSummaryRequestBody),
+        });
+        
+        console.log('\ud83d\udce1 AI Summary API response status:', aiSummaryResponse.status);
+        
+        if (!aiSummaryResponse.ok) {
+          const errorText = await aiSummaryResponse.text();
+          throw new Error(`HTTP error! status: ${aiSummaryResponse.status}, body: ${errorText}`);
+        }
+        
+        const aiSummaryResult = await aiSummaryResponse.json();
+        console.log('\ud83d\udce5 AI Summary API response:', JSON.stringify(aiSummaryResult, null, 2));
+        
+        // Store the AI summary response in ai_summary column (as text)
+        const summaryText = aiSummaryResult.summary || aiSummaryResult.response || JSON.stringify(aiSummaryResult);
+        await CallManager.updateCallSummary(currentCall.call_id, summaryText);
+        console.log('\u2705 AI Summary saved to database:', summaryText.substring(0, 100) + '...');
+        
+      } catch (error) {
+        console.error('\u274c Error in AI summary API:', error);
+        // Don't fail the call end process if AI summary API fails
+      }
+      
       // ===== COMPREHENSIVE CALL END LOGGING =====
       console.log('🎯 ===== CALL ENDED - COMPREHENSIVE LOGGING =====');
       console.log('📞 Call ID:', currentCall.call_id);
