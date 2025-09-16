@@ -140,20 +140,36 @@ export const useTranscription = () => {
   // Stop call with database integration
   const stopCall = useCallback(async (): Promise<boolean> => {
     try {
+      console.log('🔚 stopCall invoked');
       if (!currentCall) return false;
 
       // Stop recording
       await stopUnifiedRecording();
+      console.log('🎙️ Recording stopped');
+
+      // Allow MediaRecorder "onstop" handlers to flush final chunks before we read them
+      await new Promise(resolve => setTimeout(resolve, 600));
+      console.log('⏱️ Flush wait complete');
       
       // Upload audio files
+      console.log('🎛️ Chunks status:', { micChunks: micAudioChunks.length, systemChunks: systemAudioChunks.length });
       if (systemAudioChunks.length > 0 || micAudioChunks.length > 0) {
+        // Ensure we have an active session for Storage RLS
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          console.error('No active auth session; cannot upload recording.');
+          return false;
+        }
+
         const combinedBlob = await createCombinedAudioFile();
         if (combinedBlob) {
+          console.log('🧩 Combined blob ready:', { size: combinedBlob.size, type: combinedBlob.type });
           setLastRecordingBlob(combinedBlob);
+          console.log('⬆️ Uploading recording to storage...');
           const audioPath = await AudioUploadService.uploadAudioFile(
             combinedBlob, 
             currentCall.call_id, 
-            currentCall.owner_id
+            session.user.id
           );
           
           if (audioPath) {
@@ -165,8 +181,14 @@ export const useTranscription = () => {
               path: audioPath,
               signedUrl
             });
+          } else {
+            console.error('❌ Upload returned null path (see previous error logs).');
           }
+        } else {
+          console.warn('⚠️ No combined blob produced from chunks.');
         }
+      } else {
+        console.warn('⚠️ No audio chunks captured; skipping upload.');
       }
 
       // Generate AI summary from transcript

@@ -1,5 +1,5 @@
 "use client"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   Search,
@@ -999,6 +999,8 @@ Best regards,`,
     description: "",
     agenda: [] as string[],
   })
+  const [emailAttendees, setEmailAttendees] = useState<string[]>([])
+  const [currentEmailInput, setCurrentEmailInput] = useState("")
   const [isRenameOpen, setIsRenameOpen] = useState(false)
   const [isLabelOpen, setIsLabelOpen] = useState(false)
   const [isCallDetailsOpen, setIsCallDetailsOpen] = useState(false)
@@ -1130,6 +1132,8 @@ Best regards,`,
   const handleCloseCreateCallModal = () => {
     setIsCreateCallOpen(false)
     setNewCall({ title: "", company: "", date: "", time: "", attendees: "", description: "", agenda: [] })
+    setEmailAttendees([])
+    setCurrentEmailInput("")
     setUploadedFiles([])
     setAgendaInput("")
   }
@@ -1161,10 +1165,7 @@ Best regards,`,
         company: newCall.company,
         date: newCall.date,
         time: newCall.time,
-        attendees: newCall.attendees
-          .split(",")
-          .map((a) => a.trim())
-          .filter((a) => a),
+        attendees: emailAttendees,
         description: newCall.description,
         agenda: newCall.agenda,
       }
@@ -1603,6 +1604,76 @@ Best regards,`,
       ...prev,
       [section]: prev[section].filter((_, i) => i !== index),
     }))
+  }
+
+  // Email attendees helpers for Create Call modal
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email)
+  }
+
+  const handleEmailInputChange = (value: string) => {
+    setCurrentEmailInput(value)
+    if (value.includes(',')) {
+      const pieces = value
+        .split(',')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0)
+      const validNew = pieces.filter((p) => isValidEmail(p) && !emailAttendees.includes(p))
+      if (validNew.length > 0) {
+        setEmailAttendees([...emailAttendees, ...validNew])
+        setCurrentEmailInput("")
+      }
+    }
+  }
+
+  const handleEmailInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      const email = currentEmailInput.trim()
+      if (email && isValidEmail(email) && !emailAttendees.includes(email)) {
+        setEmailAttendees([...emailAttendees, email])
+        setCurrentEmailInput("")
+      }
+    }
+    if (e.key === 'Backspace' && currentEmailInput === '' && emailAttendees.length > 0) {
+      // remove last tag on backspace when input empty
+      setEmailAttendees(emailAttendees.slice(0, -1))
+    }
+  }
+
+  const removeEmailTag = (emailToRemove: string) => {
+    setEmailAttendees(emailAttendees.filter((e) => e !== emailToRemove))
+  }
+
+  // Create Call modal scroll hint
+  const createCallContentRef = useRef<HTMLDivElement | null>(null)
+  const [showScrollHint, setShowScrollHint] = useState(false)
+
+  useEffect(() => {
+    if (!isCreateCallOpen) return
+    const el = createCallContentRef.current
+    if (!el) return
+    const update = () => {
+      setShowScrollHint(el.scrollHeight > el.clientHeight && el.scrollTop < el.scrollHeight - el.clientHeight - 8)
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    el.addEventListener('scroll', update)
+    window.addEventListener('resize', update)
+    return () => {
+      ro.disconnect()
+      el.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [isCreateCallOpen])
+
+  const scrollCreateCallDown = () => {
+    const el = createCallContentRef.current
+    if (el) {
+      el.scrollTo({ top: el.scrollTop + el.clientHeight, behavior: 'smooth' })
+    }
   }
 
   return (
@@ -2323,7 +2394,7 @@ Best regards,`,
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={handleCloseCreateCallModal} />
 
-          <div className="relative bg-white rounded-lg shadow-2xl w-[500px] max-w-[90vw]">
+          <div className="relative bg-white rounded-lg shadow-2xl w-[500px] max-w-[90vw] max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">Create New Call</h2>
               <Button variant="ghost" size="sm" onClick={handleCloseCreateCallModal}>
@@ -2331,7 +2402,7 @@ Best regards,`,
               </Button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div ref={createCallContentRef} className="p-6 space-y-4 overflow-y-auto max-h-[65vh]">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Call Title *</label>
                 <Input
@@ -2371,11 +2442,33 @@ Best regards,`,
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Attendees</label>
-                <Input
-                  value={newCall.attendees}
-                  onChange={(e) => setNewCall({ ...newCall, attendees: e.target.value })}
-                  placeholder="Enter attendee emails (comma separated)"
-                />
+                <div className="border border-gray-300 rounded-md p-2 min-h-[42px] focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {emailAttendees.map((email) => (
+                      <div key={email} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-md">
+                        <span>{email}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeEmailTag(email)}
+                          className="hover:bg-blue-200 rounded-full p-0.5"
+                          aria-label={`Remove ${email}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <Input
+                    value={currentEmailInput}
+                    onChange={(e) => handleEmailInputChange(e.target.value)}
+                    onKeyDown={handleEmailInputKeyDown}
+                    placeholder={emailAttendees.length === 0 ? "Enter attendee emails (comma separated)" : "Add another email and press comma"}
+                    className="border-0 p-0 shadow-none focus-visible:ring-0"
+                  />
+                </div>
+                {currentEmailInput && !isValidEmail(currentEmailInput) && currentEmailInput.includes('@') === false && (
+                  <p className="mt-1 text-sm text-red-600">Email must include @</p>
+                )}
               </div>
 
               <div>
@@ -2506,6 +2599,20 @@ Best regards,`,
                 )}
               </Button>
             </div>
+
+            {showScrollHint && (
+              <button
+                type="button"
+                onClick={scrollCreateCallDown}
+                className="absolute left-1/2 -translate-x-1/2 bottom-20 z-10 h-10 w-10 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                aria-label="Scroll down"
+                title="Scroll down"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="M7 10l5 5 5-5" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       )}

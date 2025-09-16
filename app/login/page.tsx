@@ -1,3 +1,5 @@
+"use client"
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, UserProfile } from '@/lib/supabase'
@@ -6,13 +8,15 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle, Mail, User, Building, Target, ArrowRight, Loader2 } from 'lucide-react'
+import { CheckCircle, Mail, User, Building, Target, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export default function LoginPage() {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
   const [organisation, setOrganisation] = useState('')
@@ -21,18 +25,96 @@ export default function LoginPage() {
   const [showProgress, setShowProgress] = useState(false)
   const [progress, setProgress] = useState(0)
   const [progressMessage, setProgressMessage] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
+  const [usernameError, setUsernameError] = useState('')
 
   const updateProgress = (step: number, message: string) => {
     setProgress((step / 4) * 100)
     setProgressMessage(message)
   }
 
+  const checkUsernameAvailability = async (username: string) => {
+    if (!username) {
+      setUsernameStatus('idle')
+      setUsernameError('')
+      return
+    }
+
+    if (username.length < 5) {
+      setUsernameStatus('idle')
+      setUsernameError('Username must be at least 5 characters long')
+      return
+    }
+
+    setUsernameStatus('checking')
+    setUsernameError('')
+
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('username')
+        .eq('username', username)
+        .single()
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
+        console.error('Error checking username:', error)
+        setUsernameStatus('idle')
+        setUsernameError('Error checking username availability')
+        return
+      }
+
+      if (data) {
+        setUsernameStatus('taken')
+        setUsernameError('Username is already taken')
+      } else {
+        setUsernameStatus('available')
+        setUsernameError('')
+      }
+    } catch (error) {
+      console.error('Error checking username:', error)
+      setUsernameStatus('idle')
+      setUsernameError('Error checking username availability')
+    }
+  }
+
+  const handleUsernameChange = (value: string) => {
+    setUsername(value)
+    // Debounce the username check
+    const timeoutId = setTimeout(() => {
+      checkUsernameAvailability(value)
+    }, 500)
+    
+    return () => clearTimeout(timeoutId)
+  }
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validation
-    if (!email || !password || !fullName || !username || !organisation || !purpose) {
+    if (!email || !password || !confirmPassword || !fullName || !username || !organisation || !purpose) {
       alert("Please fill in all fields")
+      return
+    }
+
+    if (password !== confirmPassword) {
+      alert("Passwords do not match")
+      return
+    }
+
+    if (usernameStatus === 'taken') {
+      alert("Please choose a different username")
+      return
+    }
+
+    if (usernameStatus === 'checking') {
+      alert("Please wait while we check username availability")
+      return
+    }
+
+    if (username.length < 5) {
+      alert("Username must be at least 5 characters long")
       return
     }
 
@@ -74,7 +156,7 @@ export default function LoginPage() {
       
       const userProfile: UserProfile = {
         username,
-        full_name,
+        full_name: fullName,
         date_joined: new Date().toISOString(),
         email,
         organisation,
@@ -309,26 +391,52 @@ export default function LoginPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Username
                 </label>
-                <Input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Choose a username"
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    type="text"
+                    value={username}
+                    onChange={(e) => handleUsernameChange(e.target.value)}
+                    placeholder="Choose a username"
+                    className={`pr-10 ${usernameStatus === 'taken' || usernameError.includes('5 characters') ? 'border-red-500' : usernameStatus === 'available' ? 'border-green-500' : ''}`}
+                    required
+                  />
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    {usernameStatus === 'checking' && (
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                    )}
+                    {usernameStatus === 'available' && (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    )}
+                    {usernameStatus === 'taken' && (
+                      <div className="h-4 w-4 bg-red-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">!</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {usernameError && (
+                  <p className="mt-1 text-sm text-red-600">{usernameError}</p>
+                )}
+                {usernameStatus === 'available' && (
+                  <p className="mt-1 text-sm text-green-600">Username is available!</p>
+                )}
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Email
                 </label>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
-                  required
-                />
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    className="pl-10"
+                    required
+                  />
+                </div>
               </div>
               
               <div>
@@ -348,26 +456,68 @@ export default function LoginPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Purpose
                 </label>
-                <Input
-                  type="text"
-                  value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
-                  placeholder="How will you use Sally?"
-                  required
-                />
+                <Select value={purpose} onValueChange={setPurpose} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="How will you use Sally?" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sales">Sales Calls</SelectItem>
+                    <SelectItem value="customer-support">Customer Support</SelectItem>
+                    <SelectItem value="interviews">Job Interviews</SelectItem>
+                    <SelectItem value="meetings">Business Meetings</SelectItem>
+                    <SelectItem value="consulting">Consulting Sessions</SelectItem>
+                    <SelectItem value="training">Training Sessions</SelectItem>
+                    <SelectItem value="research">Research Interviews</SelectItem>
+                    <SelectItem value="personal">Personal Calls</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Password
                 </label>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create a password"
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Create a password"
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm your password"
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
               
               <Button 
