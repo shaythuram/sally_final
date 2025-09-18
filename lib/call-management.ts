@@ -27,6 +27,10 @@ export class CallManager {
           duration: 0, // will be updated when call ends
           attendees: callData.attendeeEmails.length,
           attendee_emails: callData.attendeeEmails,
+          labels: [],
+          members_emails: callData.attendeeEmails || [],
+          members_uids: [],
+          documents: [],
           meeting_agenda: callData.meetingAgenda,
           meeting_description: callData.meetingDescription,
           status: 'active',

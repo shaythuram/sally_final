@@ -1219,6 +1219,9 @@ Best regards,`,
   const [calls, setCalls] = useState(callsData)
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [selectedFilters, setSelectedFilters] = useState<string[]>([])
+  // Catalog of labels to ensure filter dropdown includes labels even if the
+  // corresponding call is not present in the current UI list
+  const [labelCatalog, setLabelCatalog] = useState<Array<{ text: string; color: string }>>([])
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false)
   const [editedTranscript, setEditedTranscript] = useState<{ [key: string]: string }>({})
 
@@ -1258,16 +1261,16 @@ Best regards,`,
   })
   const [isEditingReport, setIsEditingReport] = useState(false)
 
-  const uniqueCompanyLabels = Array.from(
-    new Set(calls.flatMap((call) => call.labels?.map((label) => label.text) || [])),
-  ).map((labelText) => {
-    const call = calls.find((c) => c.labels?.some((label) => label.text === labelText))
-    const label = call?.labels?.find((l) => l.text === labelText)
-    return {
-      text: labelText,
-      color: label?.color || "gray",
+  // Build filter options from calls plus any cataloged labels
+  const uniqueCompanyLabels = (() => {
+    const fromCalls = calls.flatMap((call) => call.labels?.map((label) => ({ text: label.text, color: label.color })) || [])
+    const combined = [...fromCalls, ...labelCatalog]
+    const seen = new Map<string, { text: string; color: string }>()
+    for (const l of combined) {
+      if (!seen.has(l.text)) seen.set(l.text, l)
     }
-  })
+    return Array.from(seen.values())
+  })()
 
   const filteredCalls =
     selectedFilters.length === 0
@@ -1617,41 +1620,95 @@ Best regards,`,
     setRenameTitle("")
   }
 
-  const handleSaveLabel = () => {
+  const handleSaveLabel = async () => {
+    console.log('Add Label: start', { selectedCallForEdit, labelText, labelColor })
     if (!labelText.trim() || !selectedCallForEdit) return
 
-    setCalls((prevCalls) =>
-      prevCalls.map((call) => {
-        if (call.id === selectedCallForEdit) {
-          const existingLabels = call.labels || []
-          const newLabel = { text: labelText.trim(), color: labelColor }
-          // Check if label already exists
-          const labelExists = existingLabels.some((label) => label.text === newLabel.text)
-          if (!labelExists) {
-            return { ...call, labels: [...existingLabels, newLabel] }
-          }
+    // Compute nextLabels before state change and resolve the real DB call_id
+    const callIdx = calls.findIndex(c => c.id === selectedCallForEdit || (c as any).call_id === selectedCallForEdit)
+    let targetCall: any = callIdx !== -1 ? calls[callIdx] : null
+    const dbCallId: string = (targetCall && (targetCall.call_id || targetCall.id)) || selectedCallForEdit
+
+    // Determine existing labels (from state if present; otherwise fetch from DB)
+    let existingLabels: Array<{ text: string; color: string }> = (targetCall?.labels as any) || []
+    if (!existingLabels.length) {
+      try {
+        const { data, error } = await supabase
+          .from('calls')
+          .select('labels')
+          .eq('call_id', dbCallId)
+          .single()
+        if (!error && data?.labels) {
+          existingLabels = data.labels as Array<{ text: string; color: string }>
         }
-        return call
-      }),
-    )
+      } catch (e) {
+        console.warn('Add Label: could not fetch existing labels, proceeding with empty list')
+      }
+    }
+    const newLabel = { text: labelText.trim(), color: labelColor }
+    const labelExists = existingLabels.some(l => l.text === newLabel.text)
+    const nextLabels: Array<{ text: string; color: string }> = labelExists ? existingLabels : [...existingLabels, newLabel]
+
+    // Ensure the new label appears in Filters dropdown immediately
+    if (!labelCatalog.some(l => l.text === newLabel.text)) {
+      setLabelCatalog(prev => [...prev, newLabel])
+    }
+
+    // Optimistic UI
+    if (callIdx !== -1) {
+      setCalls(prev => prev.map((c, i) => (i === callIdx ? { ...c, labels: nextLabels } : c)))
+    }
+
+    try {
+      console.log('Add Label: persisting to DB', { callId: dbCallId, nextLabels })
+      await CallManager.updateCallLabels(dbCallId, nextLabels)
+      console.log('Add Label: persisted successfully')
+    } catch (e) {
+      console.error('Failed to persist labels:', e)
+    }
     setIsLabelOpen(false)
     setSelectedCallForEdit(null)
     setLabelText("")
     setLabelColor("blue")
   }
 
-  const handleRemoveLabel = (callId: string, labelToRemove: string) => {
-    setCalls((prevCalls) =>
-      prevCalls.map((call) => {
-        if (call.id === callId) {
-          return {
-            ...call,
-            labels: call.labels?.filter((label) => label.text !== labelToRemove) || [],
-          }
+  const handleRemoveLabel = async (callId: string, labelToRemove: string) => {
+    console.log('Remove Label: start', { callId, labelToRemove })
+    // Resolve the real DB call_id and current labels before state change
+    const callIdx = calls.findIndex(c => c.id === callId || (c as any).call_id === callId)
+    let targetCall: any = callIdx !== -1 ? calls[callIdx] : null
+    const dbCallId: string = (targetCall && (targetCall.call_id || targetCall.id)) || callId
+
+    // Determine current labels (from state if present; otherwise fetch from DB)
+    let currentLabels: Array<{ text: string; color: string }> = (targetCall?.labels as any) || []
+    if (!currentLabels.length) {
+      try {
+        const { data, error } = await supabase
+          .from('calls')
+          .select('labels')
+          .eq('call_id', dbCallId)
+          .single()
+        if (!error && data?.labels) {
+          currentLabels = data.labels as Array<{ text: string; color: string }>
         }
-        return call
-      }),
-    )
+      } catch (e) {
+        console.warn('Remove Label: could not fetch existing labels, proceeding with empty list')
+      }
+    }
+    const nextLabels: Array<{ text: string; color: string }> = currentLabels.filter((label: any) => label.text !== labelToRemove)
+
+    // Optimistic UI
+    if (callIdx !== -1) {
+      setCalls(prev => prev.map((c, i) => (i === callIdx ? { ...c, labels: nextLabels } : c)))
+    }
+
+    try {
+      console.log('Remove Label: persisting to DB', { callId: dbCallId, nextLabels })
+      await CallManager.updateCallLabels(dbCallId, nextLabels)
+      console.log('Remove Label: persisted successfully')
+    } catch (e) {
+      console.error('Failed to persist label removal:', e)
+    }
   }
 
   const toggleExpandedLabels = (callId: string) => {

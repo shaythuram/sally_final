@@ -299,7 +299,7 @@ export default function DashboardPage() {
           thread_id: upcoming.thread_id
         });
 
-        const ok = await startCall(callData, user.id)
+        const ok = await startCall(callData, user.id, { sourceUpcomingCallId: callId })
         if (ok) {
           console.log('✅ Successfully started call from upcoming call ID:', callId);
           
@@ -356,16 +356,20 @@ export default function DashboardPage() {
   // Enhanced stop call handler that saves all data
   const handleStopCall = async () => {
     try {
+      console.log('🛑 handleStopCall called - starting stop call process')
       // Stop call and save all data
       const success = await stopCall()
+      console.log('🛑 stopCall returned:', success)
       if (success) {
-        console.log('Call stopped and data saved successfully')
+        console.log('✅ Call stopped and data saved successfully')
+        console.log('🪟 Setting post-call modal to open...')
         setIsPostCallModalOpen(true)
+        console.log('🪟 Post-call modal state set to true')
       } else {
-        console.error('Failed to stop call properly')
+        console.error('❌ Failed to stop call properly - stopCall returned false')
       }
     } catch (error) {
-      console.error('Error stopping call:', error)
+      console.error('❌ Error stopping call:', error)
     }
   }
 
@@ -483,7 +487,7 @@ export default function DashboardPage() {
         thread_id: upcoming.thread_id
       });
 
-      const ok = await startCall(callData, user.id)
+      const ok = await startCall(callData, user.id, { sourceUpcomingCallId: callId })
       if (ok) {
         console.log('✅ Successfully started selected upcoming call ID:', selectedUpcomingId);
         
@@ -541,7 +545,7 @@ export default function DashboardPage() {
         admin_email: callData.transcriptAdminEmail
       });
 
-      const ok = await startCall(callData, user.id)
+      const ok = await startCall(callData, user.id, { sourceUpcomingCallId: selectedUpcomingId })
       if (ok) {
         console.log('✅ Successfully created and started new call');
         
@@ -803,6 +807,7 @@ export default function DashboardPage() {
           </Dialog>
 
           {/* Post Call Modal */}
+          {console.log('🪟 Modal render check - isPostCallModalOpen:', isPostCallModalOpen)}
           <Dialog open={isPostCallModalOpen} onOpenChange={setIsPostCallModalOpen}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>

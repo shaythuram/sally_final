@@ -107,6 +107,9 @@ export interface Call {
   total_tasks: number
   pending_tasks: number
   labels?: Array<{ text: string; color: string }>
+  members_emails?: string[]
+  members_uids?: string[]
+  documents?: Array<{ name: string; size?: string; path?: string }>
   
   // Genie Content
   genie_content: string[]

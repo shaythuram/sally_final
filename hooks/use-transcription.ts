@@ -115,7 +115,7 @@ export const useTranscription = () => {
     transcriptAdminEmail: string
     assistantId?: string
     threadId?: string
-  }, userId: string) => {
+  }, userId: string, options?: { sourceUpcomingCallId?: string }) => {
     try {
       // Always load screen sources fresh before starting call
       console.log('Loading screen sources before starting call...');
@@ -154,11 +154,37 @@ export const useTranscription = () => {
         throw new Error('Failed to load screen sources. Please ensure screen sharing permissions are granted.');
       }
 
+      // If starting from an upcoming call, fetch its documents to seed into the new call
+      let seedDocuments: Array<{ name: string; path?: string; size?: string }> = []
+      if (options?.sourceUpcomingCallId) {
+        try {
+          const { data, error } = await supabase
+            .from('upcoming_calls')
+            .select('documents')
+            .eq('call_id', options.sourceUpcomingCallId)
+            .single()
+          if (!error && data?.documents) {
+            seedDocuments = Array.isArray(data.documents) ? data.documents : []
+          }
+        } catch {}
+      }
+
       // Create call in database
       const newCall = await CallManager.createCall(callData, userId);
       if (!newCall) {
         console.error('Failed to create call in database');
         return false;
+      }
+      // If we have seed documents, persist them on the new call
+      if (seedDocuments.length > 0) {
+        try {
+          await supabase
+            .from('calls')
+            .update({ documents: seedDocuments })
+            .eq('call_id', newCall.call_id)
+        } catch (e) {
+          console.warn('Failed to seed documents onto new call', e)
+        }
       }
 
       console.log('🎯 CALL CREATED - Call ID:', newCall.call_id);
