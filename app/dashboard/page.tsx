@@ -266,6 +266,7 @@ export default function DashboardPage() {
 
   // Auto-start call if navigated with callId from Upcoming Calls
   const searchParams = useSearchParams()
+  const hasAutoStartedRef = useRef(false)
   // router already declared above
   useEffect(() => {
     const maybeStartCall = async () => {
@@ -273,6 +274,7 @@ export default function DashboardPage() {
         const callId = searchParams.get('callId')
         if (!callId) return
         if (!user) return
+        if (hasAutoStartedRef.current) return // Prevent multiple auto-starts
 
         // Fetch upcoming call details
         const upcoming = await (await import('@/lib/upcoming-calls-manager')).UpcomingCallsManager.getUpcomingCallById(callId)
@@ -299,6 +301,7 @@ export default function DashboardPage() {
           thread_id: upcoming.thread_id
         });
 
+        hasAutoStartedRef.current = true // Mark as started
         const ok = await startCall(callData, user.id, { sourceUpcomingCallId: callId })
         if (ok) {
           console.log('✅ Successfully started call from upcoming call ID:', callId);
@@ -336,7 +339,7 @@ export default function DashboardPage() {
       }
     }
     maybeStartCall()
-  }, [searchParams, user, startCall])
+  }, [searchParams, user])
 
   // Enhanced start call handler that creates a database record
   const handleStartCall = async () => {
