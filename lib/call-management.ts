@@ -62,6 +62,18 @@ export class CallManager {
   // Create a new call with a specific call_id (for joining from upcoming calls)
   static async createCallWithId(callData: CreateCallData, userId: string, callId: string): Promise<Call | null> {
     try {
+      // First check if a call with this ID already exists
+      const { data: existingCall, error: fetchError } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('call_id', callId)
+        .single()
+      
+      if (existingCall && !fetchError) {
+        console.log('✅ Call with ID already exists, returning existing call:', callId);
+        return existingCall;
+      }
+      
       // Create initial transcript structure
       const initialTranscript: TranscriptData = {
         entries: [],

@@ -179,16 +179,10 @@ export const useTranscription = () => {
         // Use the upcoming call's ID to create the new call
         newCall = await CallManager.createCallWithId(callData, userId, upcomingCallId);
         if (!newCall) {
-          console.error('❌ Failed to create call with upcoming call ID, falling back to regular createCall');
-          // Fallback to regular createCall if createCallWithId fails
-          newCall = await CallManager.createCall(callData, userId);
-          if (!newCall) {
-            console.error('Failed to create call in database');
-            return false;
-          }
-        } else {
-          console.log('✅ Successfully created call with upcoming call ID:', upcomingCallId);
+          console.error('❌ Failed to create call with upcoming call ID');
+          return false;
         }
+        console.log('✅ Successfully created/found call with upcoming call ID:', upcomingCallId);
         
         // Delete the upcoming call since we've converted it to an active call
         try {
