@@ -22,6 +22,9 @@ import {
   Loader2,
   Send,
   MessageSquare,
+  Plus,
+  FileText,
+  ChevronDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -38,6 +41,7 @@ import { useTranscription } from "@/hooks/use-transcription"
 import { CallManager } from "@/lib/call-management"
 import { supabase } from "@/lib/supabase"
 import { UpcomingCallsManager, UpcomingCall } from "@/lib/upcoming-calls-manager"
+import { DocumentUploadService } from "@/lib/document-upload-service"
 
 
 // Mock data for the dashboard
@@ -242,13 +246,26 @@ export default function DashboardPage() {
 
   // Start Call modal state
   const [isStartCallModalOpen, setIsStartCallModalOpen] = useState(false)
-  const [startTab, setStartTab] = useState<'select' | 'create'>('select')
   const [selectedUpcomingId, setSelectedUpcomingId] = useState<string | null>(null)
-  const [newCallTitle, setNewCallTitle] = useState("")
-  const [newCallCompany, setNewCallCompany] = useState("")
-  const [newCallAgenda, setNewCallAgenda] = useState<string>("")
-  const [newCallDescription, setNewCallDescription] = useState("")
-  const [newCallAttendees, setNewCallAttendees] = useState<string>("")
+  
+  // Create Call modal state (from calls page)
+  const [isCreateCallOpen, setIsCreateCallOpen] = useState(false)
+  const [newCall, setNewCall] = useState({
+    title: "",
+    company: "",
+    date: "",
+    time: "",
+    attendees: "",
+    description: "",
+    agenda: [] as string[],
+  })
+  const [emailAttendees, setEmailAttendees] = useState<string[]>([])
+  const [currentEmailInput, setCurrentEmailInput] = useState("")
+  const [agendaInput, setAgendaInput] = useState("")
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const createCallContentRef = useRef<HTMLDivElement | null>(null)
+  const [showScrollHint, setShowScrollHint] = useState(false)
   
   // Initialize user
   useEffect(() => {
@@ -274,7 +291,14 @@ export default function DashboardPage() {
         const callId = searchParams.get('callId')
         if (!callId) return
         if (!user) return
-        if (hasAutoStartedRef.current) return // Prevent multiple auto-starts
+        if (hasAutoStartedRef.current) {
+          console.log(' Already auto-started, skipping')
+          return // Prevent multiple auto-starts
+        }
+
+        // Set guard immediately to prevent race conditions
+        hasAutoStartedRef.current = true
+        console.log('🔒 Set guard to prevent duplicate calls')
 
         // Fetch upcoming call details
         const upcoming = await (await import('@/lib/upcoming-calls-manager')).UpcomingCallsManager.getUpcomingCallById(callId)
@@ -301,7 +325,6 @@ export default function DashboardPage() {
           thread_id: upcoming.thread_id
         });
 
-        hasAutoStartedRef.current = true // Mark as started
         const ok = await startCall(callData, user.id, { sourceUpcomingCallId: callId })
         if (ok) {
           console.log('✅ Successfully started call from upcoming call ID:', callId);
@@ -314,13 +337,6 @@ export default function DashboardPage() {
             upcoming.documents.forEach((doc: any) => {
               const docUrl = `https://your-supabase-project.supabase.co/storage/v1/object/public/call-documents/${doc.path}`;
               console.log(`   - ${docUrl}`);
-
-
-
-
-
-
-
             });
           } else {
             console.log('📄 Documents: No documents in this upcoming call');
@@ -519,49 +535,180 @@ export default function DashboardPage() {
     }
   }
 
-  // Create a new call and immediately start it
-  const createAndStartNewCall = async () => {
-    if (!user) return
-    try {
-      const agenda = newCallAgenda
-        .split('\n')
-        .map(s => s.trim())
-        .filter(Boolean)
-      const attendeeEmails = newCallAttendees
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean)
-      const callData = {
-        title: newCallTitle || `Meeting - ${new Date().toLocaleDateString()}`,
-        company: newCallCompany || 'Client Company',
-        meetingAgenda: agenda.length ? agenda : ['General Discussion'],
-        meetingDescription: newCallDescription || 'Live meeting transcription',
-        attendeeEmails,
-        transcriptAdminEmail: user.email || '',
-      }
-      console.log('🎯 CREATING AND STARTING NEW CALL');
-      console.log('📋 New Call Details:', {
-        title: callData.title,
-        company: callData.company,
-        agenda: callData.meetingAgenda,
-        attendees: callData.attendeeEmails,
-        admin_email: callData.transcriptAdminEmail
-      });
 
-      const ok = await startCall(callData, user.id)
-      if (ok) {
-        console.log('✅ Successfully created and started new call');
-        
-        // Log any uploaded files associated with this call creation
-        console.log('📁 ===== UPLOADED FILES DURING CALL CREATION =====');
-        console.log('📞 Call ID:', currentCall?.call_id || 'Call ID not available yet');
-        console.log('📄 Documents: No documents uploaded during call creation');
-        setIsStartCallModalOpen(false)
-      } else {
-        console.error('❌ Failed to create and start new call');
+  // Create Call modal handlers (from calls page)
+  const handleCloseCreateCallModal = () => {
+    setIsCreateCallOpen(false)
+    setNewCall({ title: "", company: "", date: "", time: "", attendees: "", description: "", agenda: [] })
+    setEmailAttendees([])
+    setCurrentEmailInput("")
+    setUploadedFiles([])
+    setAgendaInput("")
+    setIsLoading(false)
+    setShowScrollHint(false)
+    
+    // Refresh upcoming calls list
+    if (user) {
+      UpcomingCallsManager.getUserUpcomingCalls(user.id).then(calls => {
+        setUpcomingCalls(calls)
+      }).catch(console.error)
+    }
+  }
+
+  const handleCreateCall = async () => {
+    if (!newCall.title || !newCall.company || !newCall.date || !newCall.time) {
+      alert("Please fill in all required fields")
+      return
+    }
+
+    if (!user) {
+      console.error('No user found')
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      // Create the call in the database
+      const callData = {
+        title: newCall.title,
+        company: newCall.company,
+        date: newCall.date,
+        time: newCall.time,
+        attendees: emailAttendees,
+        description: newCall.description,
+        agenda: newCall.agenda,
       }
-    } catch (e) {
-      console.error('Failed to create and start new call:', e)
+
+      const createdCall = await UpcomingCallsManager.createUpcomingCall(user.id, callData)
+      console.log('Created upcoming call:', createdCall)
+
+      // Upload documents if any
+      if (uploadedFiles.length > 0) {
+        const uploadedDocuments = await DocumentUploadService.uploadDocuments(
+          uploadedFiles, 
+          user.id, 
+          createdCall.call_id
+        )
+        console.log('Uploaded documents:', uploadedDocuments)
+        
+        // Update the upcoming call with document references
+        await UpcomingCallsManager.updateUpcomingCall(createdCall.call_id, {
+          documents: uploadedDocuments
+        })
+      }
+
+      // Create AI assistant if files were uploaded
+      if (uploadedFiles.length > 0) {
+        try {
+          const { createAssistantWithFiles } = await import('@/lib/call-management')
+          
+          // Use the original uploaded files directly instead of downloading from URLs
+          if (uploadedFiles.length > 0) {
+            const assistantName = `Assistant for ${callData.title} - ${callData.company}`;
+            const instructions = callData.description
+              ? `You are a helpful assistant for this call about: ${callData.description}. Use the uploaded documents and your knowledge to answer questions and assist with any call-related queries.`
+              : `You are a helpful assistant for this call. Use the uploaded documents and your knowledge to answer questions and assist with any call-related queries.`;
+            
+            const result = await createAssistantWithFiles(uploadedFiles, assistantName, instructions);
+            
+            if (result.error) {
+              console.error('Failed to create assistant:', result.error);
+            } else {
+              console.log('🤖 Assistant created successfully');
+              console.log('🧵 Thread ID:', result.thread_id || 'No thread created');
+              console.log('📁 Vector Store ID:', result.vectorStore_id);
+              console.log('📄 Files uploaded:', result.uploadedFiles);
+              
+              // Store the assistant_id and thread_id in the upcoming call record
+              await UpcomingCallsManager.updateUpcomingCall(createdCall.call_id, {
+                assistant_id: result.assistant_id,
+                thread_id: result.thread_id
+              });
+            }
+          }
+        } catch (assistantError) {
+          console.error('Error creating assistant:', assistantError);
+        }
+      }
+
+      // Refresh upcoming calls list
+      const updatedCalls = await UpcomingCallsManager.getUserUpcomingCalls(user.id)
+      setUpcomingCalls(updatedCalls)
+
+      handleCloseCreateCallModal()
+      // Show success message
+      console.log("Call created successfully!")
+      
+    } catch (error) {
+      console.error('Error creating call:', error)
+      alert('Failed to create call. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Email attendees helpers for Create Call modal
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email)
+  }
+
+  const handleEmailInputChange = (value: string) => {
+    setCurrentEmailInput(value)
+    const pieces = value.split(',').map((p) => p.trim()).filter((p) => p.length > 0)
+    const validNew = pieces.filter((p) => isValidEmail(p) && !emailAttendees.includes(p))
+    if (validNew.length > 0) {
+      setEmailAttendees([...emailAttendees, ...validNew])
+      setCurrentEmailInput("")
+    }
+  }
+
+  const handleEmailInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const email = currentEmailInput.trim()
+      if (email && isValidEmail(email) && !emailAttendees.includes(email)) {
+        setEmailAttendees([...emailAttendees, email])
+        setCurrentEmailInput("")
+      }
+    }
+    if (e.key === 'Backspace' && currentEmailInput === '' && emailAttendees.length > 0) {
+      // remove last tag on backspace when input empty
+      setEmailAttendees(emailAttendees.slice(0, -1))
+    }
+  }
+
+  const removeEmailTag = (emailToRemove: string) => {
+    setEmailAttendees(emailAttendees.filter((e) => e !== emailToRemove))
+  }
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    setUploadedFiles((prev) => [...prev, ...files])
+  }
+
+  // Create Call modal scroll hint
+  useEffect(() => {
+    if (!isCreateCallOpen) return
+    const el = createCallContentRef.current
+    if (!el) return
+    const update = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el
+      setShowScrollHint(scrollHeight > clientHeight && scrollTop < scrollHeight - clientHeight - 10)
+    }
+    update()
+    el.addEventListener('scroll', update)
+    window.addEventListener('resize', update)
+    return () => {
+      el.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [isCreateCallOpen])
+
+  const scrollCreateCallDown = () => {
+    if (createCallContentRef.current) {
+      createCallContentRef.current.scrollTop = createCallContentRef.current.scrollHeight
     }
   }
 
@@ -735,14 +882,26 @@ export default function DashboardPage() {
                 {/* Recording Controls */}
                 <div className="flex items-center gap-2">
                   {!isRecording ? (
-                    <Button 
-                      onClick={handleStartCall}
-                      disabled={!selectedScreenSource || !user}
-                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium"
-                    >
-                      <Play className="h-4 w-4 mr-2" />
-                      Start Call
-                    </Button>
+                    // Show Create Call button if no upcoming calls, otherwise show Start Call button
+                    upcomingCalls.length === 0 ? (
+                      <Button 
+                        onClick={() => setIsCreateCallOpen(true)}
+                        disabled={!user}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create Call
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={handleStartCall}
+                        disabled={!selectedScreenSource || !user}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium"
+                      >
+                        <Play className="h-4 w-4 mr-2" />
+                        Start Call
+                      </Button>
+                    )
                   ) : (
                     <Button 
                       onClick={handleStopCall}
@@ -767,45 +926,27 @@ export default function DashboardPage() {
               <DialogHeader>
                 <DialogTitle>Start a Call</DialogTitle>
               </DialogHeader>
-              <Tabs value={startTab} onValueChange={(v) => setStartTab(v as 'select' | 'create')}>
-                <TabsList className="grid grid-cols-2 w-full">
-                  <TabsTrigger value="select">Select Upcoming</TabsTrigger>
-                  <TabsTrigger value="create">Create New</TabsTrigger>
-                </TabsList>
-                <TabsContent value="select" className="mt-4">
-                  <div className="space-y-3 max-h-72 overflow-y-auto">
-                    {upcomingCalls.length === 0 && (
-                      <div className="text-sm text-gray-500">No upcoming calls found.</div>
+              <div className="space-y-3 max-h-72 overflow-y-auto">
+                {upcomingCalls.length === 0 && (
+                  <div className="text-sm text-gray-500">No upcoming calls found.</div>
+                )}
+                {upcomingCalls.map((c) => (
+                  <button
+                    key={c.call_id}
+                    onClick={() => setSelectedUpcomingId(c.call_id)}
+                    className={`w-full text-left p-3 rounded border ${selectedUpcomingId === c.call_id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <div className="font-medium text-gray-900">{c.title}</div>
+                    <div className="text-xs text-gray-600">{c.company} • {c.call_date} {c.call_time}</div>
+                    {Array.isArray(c.agenda) && c.agenda.length > 0 && (
+                      <div className="mt-1 text-xs text-gray-500 truncate">Agenda: {c.agenda.join(', ')}</div>
                     )}
-                    {upcomingCalls.map((c) => (
-                      <button
-                        key={c.call_id}
-                        onClick={() => setSelectedUpcomingId(c.call_id)}
-                        className={`w-full text-left p-3 rounded border ${selectedUpcomingId === c.call_id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
-                      >
-                        <div className="font-medium text-gray-900">{c.title}</div>
-                        <div className="text-xs text-gray-600">{c.company} • {c.call_date} {c.call_time}</div>
-                        {Array.isArray(c.agenda) && c.agenda.length > 0 && (
-                          <div className="mt-1 text-xs text-gray-500 truncate">Agenda: {c.agenda.join(', ')}</div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <DialogFooter className="mt-4">
-                    <Button onClick={confirmStartFromUpcoming} disabled={!selectedUpcomingId} className="w-full">Start Selected Call</Button>
-                  </DialogFooter>
-                </TabsContent>
-                <TabsContent value="create" className="mt-4 space-y-3">
-                  <Input placeholder="Title" value={newCallTitle} onChange={e => setNewCallTitle(e.target.value)} />
-                  <Input placeholder="Company" value={newCallCompany} onChange={e => setNewCallCompany(e.target.value)} />
-                  <Textarea placeholder="Agenda (one item per line)" value={newCallAgenda} onChange={e => setNewCallAgenda(e.target.value)} />
-                  <Textarea placeholder="Description" value={newCallDescription} onChange={e => setNewCallDescription(e.target.value)} />
-                  <Input placeholder="Attendees (comma-separated emails)" value={newCallAttendees} onChange={e => setNewCallAttendees(e.target.value)} />
-                  <DialogFooter>
-                    <Button onClick={createAndStartNewCall} className="w-full">Create and Start</Button>
-                  </DialogFooter>
-                </TabsContent>
-              </Tabs>
+                  </button>
+                ))}
+              </div>
+              <DialogFooter className="mt-4">
+                <Button onClick={confirmStartFromUpcoming} disabled={!selectedUpcomingId} className="w-full">Start Selected Call</Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
 
@@ -825,6 +966,231 @@ export default function DashboardPage() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Create Call Modal */}
+          {isCreateCallOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={handleCloseCreateCallModal} />
+
+              <div className="relative bg-white rounded-lg shadow-2xl w-[500px] max-w-[90vw] max-h-[85vh] flex flex-col">
+                <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                  <h2 className="text-xl font-semibold text-gray-900">Create New Call</h2>
+                  <Button variant="ghost" size="sm" onClick={handleCloseCreateCallModal}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div ref={createCallContentRef} className="p-6 space-y-4 overflow-y-auto max-h-[65vh]">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Call Title *</label>
+                    <Input
+                      value={newCall.title}
+                      onChange={(e) => setNewCall({ ...newCall, title: e.target.value })}
+                      placeholder="Enter call title"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Company *</label>
+                    <Input
+                      value={newCall.company}
+                      onChange={(e) => setNewCall({ ...newCall, company: e.target.value })}
+                      placeholder="Enter company name"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
+                      <Input
+                        type="date"
+                        value={newCall.date}
+                        onChange={(e) => setNewCall({ ...newCall, date: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Time *</label>
+                      <Input
+                        type="time"
+                        value={newCall.time}
+                        onChange={(e) => setNewCall({ ...newCall, time: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Attendees</label>
+                    <div className="border border-gray-300 rounded-md p-2 min-h-[42px] focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {emailAttendees.map((email) => (
+                          <div key={email} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-md">
+                            <span>{email}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeEmailTag(email)}
+                              className="hover:bg-blue-200 rounded-full p-0.5"
+                              aria-label={`Remove ${email}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    <Input
+                        value={currentEmailInput}
+                        onChange={(e) => handleEmailInputChange(e.target.value)}
+                        onKeyDown={handleEmailInputKeyDown}
+                        placeholder={emailAttendees.length === 0 ? "Enter attendee emails (comma separated)" : "Add another email and press comma"}
+                        className="border-0 p-0 shadow-none focus-visible:ring-0"
+                      />
+                    </div>
+                    {currentEmailInput && !isValidEmail(currentEmailInput) && currentEmailInput.includes('@') === false && (
+                      <p className="mt-1 text-sm text-red-600">Email must include @</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    <Textarea
+                      value={newCall.description}
+                      onChange={(e) => setNewCall({ ...newCall, description: e.target.value })}
+                      placeholder="Enter call description"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Meeting Agenda</label>
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <Input
+                          value={agendaInput}
+                          onChange={(e) => setAgendaInput(e.target.value)}
+                          placeholder="Enter agenda item"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && agendaInput.trim()) {
+                              setNewCall({ ...newCall, agenda: [...newCall.agenda, agendaInput.trim()] })
+                              setAgendaInput("")
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (agendaInput.trim()) {
+                              setNewCall({ ...newCall, agenda: [...newCall.agenda, agendaInput.trim()] })
+                              setAgendaInput("")
+                            }
+                          }}
+                          disabled={!agendaInput.trim()}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      {newCall.agenda.length > 0 && (
+                        <div className="space-y-1">
+                          {newCall.agenda.map((item, index) => (
+                            <div key={`new-agenda-${index}`} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                              <span className="text-sm text-gray-700">{index + 1}. {item}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setNewCall({
+                                    ...newCall,
+                                    agenda: newCall.agenda.filter((_, i) => i !== index)
+                                  })
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* File Upload Section */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Documents & Emails</label>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                      <input
+                        type="file"
+                        multiple
+                        accept=".pdf,.doc,.docx,.ppt,.pptx,.eml,.msg,.txt"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label
+                        htmlFor="file-upload"
+                        className="cursor-pointer flex flex-col items-center justify-center text-center"
+                      >
+                        <FileText className="h-8 w-8 text-gray-400 mb-2" />
+                        <span className="text-sm text-gray-600">Click to upload documents and emails</span>
+                        <span className="text-xs text-gray-500 mt-1">PDF, DOC, PPT, EML files supported</span>
+                      </label>
+                    </div>
+
+                    {uploadedFiles.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-sm font-medium text-gray-700">Uploaded Files:</p>
+                        {uploadedFiles.map((file, index) => (
+                          <div key={`uploaded-file-${index}`} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-gray-400" />
+                              <span className="text-sm text-gray-700">{file.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setUploadedFiles((prev) => prev.filter((_, i) => i !== index))}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+                  <Button variant="outline" onClick={handleCloseCreateCallModal}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateCall} disabled={isLoading}>
+                    {isLoading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Creating...
+                      </div>
+                    ) : (
+                      "Create Call"
+                    )}
+                  </Button>
+                </div>
+
+                {showScrollHint && (
+                  <button
+                    type="button"
+                    onClick={scrollCreateCallDown}
+                    className="absolute bottom-20 right-6 bg-blue-600 text-white rounded-full p-2 shadow-lg hover:bg-blue-700 transition-colors"
+                    aria-label="Scroll down"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <div className={`flex-1 grid grid-cols-1 gap-8 ${isTranscriptionVisible ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
             {/* Left Column - Live Transcription */}
             {isTranscriptionVisible && (

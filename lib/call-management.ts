@@ -62,6 +62,8 @@ export class CallManager {
   // Create a new call with a specific call_id (for joining from upcoming calls)
   static async createCallWithId(callData: CreateCallData, userId: string, callId: string): Promise<Call | null> {
     try {
+      console.log('🔄 createCallWithId called with callId:', callId);
+      
       // First check if a call with this ID already exists
       const { data: existingCall, error: fetchError } = await supabase
         .from('calls')
@@ -73,6 +75,8 @@ export class CallManager {
         console.log('✅ Call with ID already exists, returning existing call:', callId);
         return existingCall;
       }
+      
+      console.log('🆕 Creating new call with ID:', callId);
       
       // Create initial transcript structure
       const initialTranscript: TranscriptData = {
@@ -118,15 +122,16 @@ export class CallManager {
         .single()
       
       if (error) {
-        console.error('Error creating call with specific ID:', error)
+        console.error('❌ Error creating call with specific ID:', error)
         console.error('Call ID that failed:', callId)
-        console.error('Call data:', callData)
+        console.error('Error details:', error)
         return null
       }
       
+      console.log('✅ Successfully created call with ID:', callId);
       return data
     } catch (error) {
-      console.error('Error creating call with specific ID:', error)
+      console.error('❌ Exception in createCallWithId:', error)
       return null
     }
   }
