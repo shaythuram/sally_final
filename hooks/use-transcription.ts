@@ -154,8 +154,10 @@ export const useTranscription = () => {
         throw new Error('Failed to load screen sources. Please ensure screen sharing permissions are granted.');
       }
 
-      // If starting from an upcoming call, fetch its documents to seed into the new call
+      // If starting from an upcoming call, fetch its documents and use its call_id
       let seedDocuments: Array<{ name: string; path?: string; size?: string }> = []
+      let upcomingCallId: string | null = null
+      
       if (options?.sourceUpcomingCallId) {
         try {
           const { data, error } = await supabase
@@ -166,14 +168,42 @@ export const useTranscription = () => {
           if (!error && data?.documents) {
             seedDocuments = Array.isArray(data.documents) ? data.documents : []
           }
+          upcomingCallId = options.sourceUpcomingCallId
         } catch {}
       }
 
-      // Create call in database
-      const newCall = await CallManager.createCall(callData, userId);
-      if (!newCall) {
-        console.error('Failed to create call in database');
-        return false;
+      // Create call in database - use specific ID if joining from upcoming call
+      let newCall: Call | null
+      if (upcomingCallId) {
+        // Use the upcoming call's ID to create the new call
+        newCall = await CallManager.createCallWithId(callData, userId, upcomingCallId);
+        if (!newCall) {
+          console.error('Failed to create call with upcoming call ID');
+          return false;
+        }
+        
+        // Delete the upcoming call since we've converted it to an active call
+        try {
+          const { error: deleteError } = await supabase
+            .from('upcoming_calls')
+            .delete()
+            .eq('call_id', upcomingCallId)
+          
+          if (deleteError) {
+            console.warn('Failed to delete upcoming call after conversion:', deleteError)
+          } else {
+            console.log('✅ Upcoming call deleted after conversion to active call');
+          }
+        } catch (e) {
+          console.warn('Failed to delete upcoming call after conversion', e)
+        }
+      } else {
+        // Create new call with auto-generated ID
+        newCall = await CallManager.createCall(callData, userId);
+        if (!newCall) {
+          console.error('Failed to create call in database');
+          return false;
+        }
       }
       // If we have seed documents, persist them on the new call
       if (seedDocuments.length > 0) {

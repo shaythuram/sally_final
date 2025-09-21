@@ -59,6 +59,64 @@ export class CallManager {
     }
   }
 
+  // Create a new call with a specific call_id (for joining from upcoming calls)
+  static async createCallWithId(callData: CreateCallData, userId: string, callId: string): Promise<Call | null> {
+    try {
+      // Create initial transcript structure
+      const initialTranscript: TranscriptData = {
+        entries: [],
+        permissions: {
+          admin: callData.transcriptAdminEmail,
+          editors: [callData.transcriptAdminEmail],
+          viewers: []
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      const { data, error } = await supabase
+        .from('calls')
+        .insert([{
+          call_id: callId, // Use the specific call_id
+          owner_id: userId,
+          title: callData.title,
+          company: callData.company,
+          call_date: new Date().toISOString().split('T')[0],
+          duration: 0, // will be updated when call ends
+          attendees: callData.attendeeEmails.length,
+          attendee_emails: callData.attendeeEmails,
+          labels: [],
+          members_emails: callData.attendeeEmails || [],
+          members_uids: [],
+          documents: [],
+          meeting_agenda: callData.meetingAgenda,
+          meeting_description: callData.meetingDescription,
+          status: 'active',
+          transcript: initialTranscript,
+          post_call_actions: {},
+          genie_content: [],
+          post_call_completion: 0,
+          tasks_completed: 0,
+          total_tasks: 0,
+          pending_tasks: 0,
+          assistant_id: callData.assistantId ?? null,
+          thread_id: callData.threadId ?? null
+        }])
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Error creating call with specific ID:', error)
+        return null
+      }
+      
+      return data
+    } catch (error) {
+      console.error('Error creating call with specific ID:', error)
+      return null
+    }
+  }
+
   // Replace the entire transcript entries array
   static async updateCallTranscript(callId: string, entries: any[]): Promise<boolean> {
     try {
