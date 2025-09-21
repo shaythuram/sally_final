@@ -487,7 +487,7 @@ export default function DashboardPage() {
         thread_id: upcoming.thread_id
       });
 
-      const ok = await startCall(callData, user.id, { sourceUpcomingCallId: callId })
+      const ok = await startCall(callData, user.id, { sourceUpcomingCallId: selectedUpcomingId })
       if (ok) {
         console.log('✅ Successfully started selected upcoming call ID:', selectedUpcomingId);
         
@@ -545,7 +545,7 @@ export default function DashboardPage() {
         admin_email: callData.transcriptAdminEmail
       });
 
-      const ok = await startCall(callData, user.id, { sourceUpcomingCallId: selectedUpcomingId })
+      const ok = await startCall(callData, user.id)
       if (ok) {
         console.log('✅ Successfully created and started new call');
         

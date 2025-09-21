@@ -107,6 +107,8 @@ export class CallManager {
       
       if (error) {
         console.error('Error creating call with specific ID:', error)
+        console.error('Call ID that failed:', callId)
+        console.error('Call data:', callData)
         return null
       }
       
