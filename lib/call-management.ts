@@ -27,6 +27,7 @@ export class CallManager {
           duration: 0, // will be updated when call ends
           attendees: callData.attendeeEmails.length,
           attendee_emails: callData.attendeeEmails,
+          call_link: callData.callLink ?? null,
           labels: [],
           members_emails: callData.attendeeEmails || [],
           members_uids: [],
@@ -101,6 +102,7 @@ export class CallManager {
           duration: 0, // will be updated when call ends
           attendees: callData.attendeeEmails.length,
           attendee_emails: callData.attendeeEmails,
+          call_link: callData.callLink ?? null,
           labels: [],
           members_emails: callData.attendeeEmails || [],
           members_uids: [],

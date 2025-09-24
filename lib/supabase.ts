@@ -79,6 +79,7 @@ export interface Call {
   duration: number
   attendees: number
   attendee_emails: string[]
+  call_link?: string
   
   // Meeting Planning
   meeting_agenda: string[]
@@ -135,6 +136,7 @@ export interface CreateCallData {
   meetingDescription?: string
   attendeeEmails: string[]
   transcriptAdminEmail: string
+  callLink?: string
   assistantId?: string
   threadId?: string
 }

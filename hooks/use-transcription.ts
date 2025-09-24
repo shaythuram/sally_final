@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { CallManager } from '@/lib/call-management';
 import { AudioUploadService } from '@/lib/audio-upload';
-import { TranscriptEntry } from '@/lib/supabase';
+import { TranscriptEntry, Call, supabase } from '@/lib/supabase';
 
 export interface TranscriptionMessage {
   id: string;
@@ -113,6 +113,7 @@ export const useTranscription = () => {
     meetingDescription?: string
     attendeeEmails: string[]
     transcriptAdminEmail: string
+    callLink?: string
     assistantId?: string
     threadId?: string
   }, userId: string, options?: { sourceUpcomingCallId?: string }) => {
@@ -162,13 +163,17 @@ export const useTranscription = () => {
         try {
           const { data, error } = await supabase
             .from('upcoming_calls')
-            .select('documents')
+            .select('documents, call_link')
             .eq('call_id', options.sourceUpcomingCallId)
             .single()
           if (!error && data?.documents) {
             seedDocuments = Array.isArray(data.documents) ? data.documents : []
           }
           upcomingCallId = options.sourceUpcomingCallId
+          // If no callLink in callData, seed from upcoming call
+          if (!callData.callLink && data?.call_link) {
+            callData.callLink = data.call_link
+          }
         } catch {}
       }
 

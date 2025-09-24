@@ -1494,6 +1494,7 @@ Best regards,`,
         attendees: emailAttendees,
         description: newCall.description,
         agenda: newCall.agenda,
+        callLink: callLink,
       }
 
       const createdCall = await UpcomingCallsManager.createUpcomingCall(user.id, callData)

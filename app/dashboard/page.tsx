@@ -313,6 +313,7 @@ export default function DashboardPage() {
           meetingDescription: upcoming.description || '',
           attendeeEmails: Array.isArray(upcoming.attendees) ? upcoming.attendees : [],
           transcriptAdminEmail: user.email || '',
+          callLink: (upcoming as any).call_link || undefined,
           assistantId: upcoming.assistant_id,
           threadId: upcoming.thread_id,
         }
@@ -495,6 +496,7 @@ export default function DashboardPage() {
         meetingDescription: upcoming.description || '',
         attendeeEmails: Array.isArray(upcoming.attendees) ? upcoming.attendees : [],
         transcriptAdminEmail: user.email || '',
+        callLink: (upcoming as any).call_link || undefined,
         assistantId: upcoming.assistant_id,
         threadId: upcoming.thread_id,
       }
@@ -580,6 +582,7 @@ export default function DashboardPage() {
         attendees: emailAttendees,
         description: newCall.description,
         agenda: newCall.agenda,
+        callLink: callLink,
       }
 
       const createdCall = await UpcomingCallsManager.createUpcomingCall(user.id, callData)

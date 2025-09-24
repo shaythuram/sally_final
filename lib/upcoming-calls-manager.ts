@@ -11,6 +11,7 @@ export interface UpcomingCall {
   description?: string
   agenda: string[]
   documents: DocumentInfo[]
+  call_link?: string
   assistant_id?: string
   thread_id?: string
   created_at: string
@@ -57,6 +58,7 @@ export class UpcomingCallsManager {
       attendees: string[]
       description?: string
       agenda: string[]
+      callLink?: string
       assistantId?: string
       threadId?: string
     }
@@ -74,6 +76,7 @@ export class UpcomingCallsManager {
           description: callData.description || '',
           agenda: callData.agenda,
           documents: [],
+          call_link: callData.callLink ?? null,
           assistant_id: callData.assistantId ?? null,
           thread_id: callData.threadId ?? null
         }])
