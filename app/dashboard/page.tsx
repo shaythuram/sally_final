@@ -259,6 +259,7 @@ export default function DashboardPage() {
     description: "",
     agenda: [] as string[],
   })
+  const [callLink, setCallLink] = useState("")
   const [emailAttendees, setEmailAttendees] = useState<string[]>([])
   const [currentEmailInput, setCurrentEmailInput] = useState("")
   const [agendaInput, setAgendaInput] = useState("")
@@ -546,6 +547,7 @@ export default function DashboardPage() {
     setAgendaInput("")
     setIsLoading(false)
     setShowScrollHint(false)
+    setCallLink("")
     
     // Refresh upcoming calls list
     if (user) {
@@ -1017,6 +1019,15 @@ export default function DashboardPage() {
                       />
                     </div>
                   </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Add Call Link</label>
+                <Input
+                  value={callLink}
+                  onChange={(e) => setCallLink(e.target.value)}
+                  placeholder="Paste meeting link (Zoom, Meet, Teams, etc.)"
+                />
+              </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Attendees</label>

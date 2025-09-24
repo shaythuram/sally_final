@@ -1207,6 +1207,7 @@ Best regards,`,
     description: "",
     agenda: [] as string[],
   })
+  const [callLink, setCallLink] = useState("")
   const [emailAttendees, setEmailAttendees] = useState<string[]>([])
   const [currentEmailInput, setCurrentEmailInput] = useState("")
   const [isRenameOpen, setIsRenameOpen] = useState(false)
@@ -1460,6 +1461,7 @@ Best regards,`,
     setCurrentEmailInput("")
     setUploadedFiles([])
     setAgendaInput("")
+    setCallLink("")
   }
 
   const refreshUpcomingCalls = async () => {
@@ -2994,6 +2996,15 @@ Best regards,`,
                     onChange={(e) => setNewCall({ ...newCall, time: e.target.value })}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Add Call Link</label>
+                <Input
+                  value={callLink}
+                  onChange={(e) => setCallLink(e.target.value)}
+                  placeholder="Paste meeting link (Zoom, Meet, Teams, etc.)"
+                />
               </div>
 
               <div>
