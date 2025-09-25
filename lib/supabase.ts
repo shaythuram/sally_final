@@ -80,6 +80,8 @@ export interface Call {
   attendees: number
   attendee_emails: string[]
   call_link?: string
+  bot_id?: string
+  meeting_id?: string
   
   // Meeting Planning
   meeting_agenda: string[]
@@ -139,6 +141,8 @@ export interface CreateCallData {
   callLink?: string
   assistantId?: string
   threadId?: string
+  botId?: string
+  meetingId?: string
 }
 
 // Call update interface

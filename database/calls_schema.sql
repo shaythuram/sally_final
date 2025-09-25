@@ -17,6 +17,8 @@ CREATE TABLE calls (
   ai_summary TEXT,
   assistant_id TEXT, -- ID of the assistant created for this call
   thread_id TEXT, -- ID of the thread associated with this call
+  bot_id TEXT, -- ID of the bot handling this call
+  meeting_id TEXT, -- External meeting identifier
   
   -- Status & Metadata
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
@@ -90,3 +92,5 @@ CREATE INDEX idx_calls_status ON calls(status);
 CREATE INDEX idx_calls_company ON calls(company);
 CREATE INDEX idx_calls_assistant_id ON calls(assistant_id);
 CREATE INDEX idx_calls_thread_id ON calls(thread_id);
+CREATE INDEX idx_calls_bot_id ON calls(bot_id);
+CREATE INDEX idx_calls_meeting_id ON calls(meeting_id);
