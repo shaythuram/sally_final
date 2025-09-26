@@ -163,7 +163,7 @@ export const useTranscription = () => {
         try {
           const { data, error } = await supabase
             .from('upcoming_calls')
-            .select('documents, call_link')
+            .select('documents, call_link, bot_id, meeting_id')
             .eq('call_id', options.sourceUpcomingCallId)
             .single()
           if (!error && data?.documents) {
@@ -174,6 +174,9 @@ export const useTranscription = () => {
           if (!callData.callLink && data?.call_link) {
             callData.callLink = data.call_link
           }
+          // Transfer bot/meeting IDs from upcoming call to creation data
+          ;(callData as any).botId = (data as any)?.bot_id ?? ''
+          ;(callData as any).meetingId = (data as any)?.meeting_id ?? ''
         } catch {}
       }
 
@@ -206,6 +209,9 @@ export const useTranscription = () => {
         }
       } else {
         // Create new call with auto-generated ID
+        // Ensure default empty strings for bot/meeting ids when starting fresh
+        ;(callData as any).botId = (callData as any).botId ?? ''
+        ;(callData as any).meetingId = (callData as any).meetingId ?? ''
         newCall = await CallManager.createCall(callData, userId);
         if (!newCall) {
           console.error('Failed to create call in database');

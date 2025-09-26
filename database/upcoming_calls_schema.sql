@@ -12,6 +12,8 @@ CREATE TABLE upcoming_calls (
   documents JSONB DEFAULT '[]', -- array of document information
   assistant_id TEXT, -- assistant associated with this scheduled call
   thread_id TEXT, -- thread associated with this scheduled call
+  bot_id TEXT, -- ID of the bot handling this scheduled call
+  meeting_id TEXT, -- External meeting identifier for this scheduled call
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -52,3 +54,5 @@ CREATE INDEX idx_upcoming_calls_call_date ON upcoming_calls(call_date);
 CREATE INDEX idx_upcoming_calls_company ON upcoming_calls(company);
 CREATE INDEX idx_upcoming_calls_assistant_id ON upcoming_calls(assistant_id);
 CREATE INDEX idx_upcoming_calls_thread_id ON upcoming_calls(thread_id);
+CREATE INDEX idx_upcoming_calls_bot_id ON upcoming_calls(bot_id);
+CREATE INDEX idx_upcoming_calls_meeting_id ON upcoming_calls(meeting_id);

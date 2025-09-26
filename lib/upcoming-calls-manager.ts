@@ -14,6 +14,8 @@ export interface UpcomingCall {
   call_link?: string
   assistant_id?: string
   thread_id?: string
+  bot_id?: string
+  meeting_id?: string
   created_at: string
   updated_at: string
 }
@@ -61,6 +63,8 @@ export class UpcomingCallsManager {
       callLink?: string
       assistantId?: string
       threadId?: string
+      botId?: string
+      meetingId?: string
     }
   ): Promise<UpcomingCall | null> {
     try {
@@ -78,7 +82,9 @@ export class UpcomingCallsManager {
           documents: [],
           call_link: callData.callLink ?? null,
           assistant_id: callData.assistantId ?? null,
-          thread_id: callData.threadId ?? null
+          thread_id: callData.threadId ?? null,
+          bot_id: callData.botId ?? '',
+          meeting_id: callData.meetingId ?? ''
         }])
         .select()
         .single()
