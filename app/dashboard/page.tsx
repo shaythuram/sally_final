@@ -748,7 +748,7 @@ export default function DashboardPage() {
   const handleManualDiscoAnalysis = async () => {
     const conversation = allMessages
       .filter(msg => msg.text.trim())
-      .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
+      .map(msg => `${msg.username}: ${msg.text}`)
       .join('\n');
     
     if (conversation.trim().length > 0) {
@@ -1423,35 +1423,16 @@ export default function DashboardPage() {
                                   {allMessages.map((message) => (
                                     <div
                                       key={message.id}
-                                      className={`flex ${message.type === 'microphone' ? 'justify-end' : 'justify-start'}`}
+                                      className="flex justify-start"
                                     >
                                       <div
-                                        className={`max-w-[80%] p-3 rounded-lg text-sm ${
-                                          message.type === 'microphone'
-                                            ? 'bg-blue-500 text-white'
-                                            : 'bg-white text-gray-700 border border-gray-200'
-                                        } ${message.isAccumulating ? 'opacity-80' : ''}`}
-                                        style={
-                                          message.type === 'system' && diarizationEnabled && message.speakerId !== undefined
-                                            ? { 
-                                                backgroundColor: getSpeakerColor(message.speakerId),
-                                                color: 'white',
-                                                border: 'none'
-                                              }
-                                            : {}
-                                        }
+                                        className={`max-w-[80%] p-3 rounded-lg text-sm bg-white text-gray-700 border border-gray-200 ${message.isAccumulating ? 'opacity-80' : ''}`}
                                       >
                                         <div className="flex items-center justify-between mb-1">
                                           <div className="flex items-center gap-1">
-                                            {message.type === 'microphone' ? (
-                                              <span className="text-xs opacity-70">You</span>
-                                            ) : diarizationEnabled && message.speakerId !== undefined ? (
-                                              <span className="text-xs opacity-70">
-                                                Speaker {message.speakerId + 1}
-                                              </span>
-                                            ) : (
-                                              <span className="text-xs opacity-70">System</span>
-                                            )}
+                                            <span className="text-xs opacity-70">
+                                              {message.username || 'Speaker'}
+                                            </span>
                                           </div>
                                           <span className="text-xs opacity-70">
                                             {formatMessageTime(message.timestamp)}

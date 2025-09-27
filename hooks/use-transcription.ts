@@ -5,12 +5,10 @@ import { TranscriptEntry, Call, supabase } from '@/lib/supabase';
 
 export interface TranscriptionMessage {
   id: string;
-  type: 'microphone' | 'system';
+  username: string;
   text: string;
   timestamp: Date;
   isFinal: boolean;
-  speakerId?: number;
-  speakerLabel?: string;
   isAccumulating?: boolean;
 }
 
@@ -314,8 +312,7 @@ export const useTranscription = () => {
       
       // Generate AI summary from live messages
       const transcriptText = finalMessages.map(msg => {
-        const speaker = msg.type === 'microphone' ? 'You' : (msg.speakerLabel || `Speaker ${(msg.speakerId || 0) + 1}`);
-        return `${speaker}: ${msg.text}`;
+        return `${msg.username}: ${msg.text}`;
       }).join('\n');
       
       const aiSummary = transcriptText.length > 0 ? 
@@ -324,10 +321,9 @@ export const useTranscription = () => {
 
       // 1. Format transcript for JSONB storage (speaker-labeled, no timestamps, in order)
       const formattedTranscript = finalMessages.map((msg, index) => {
-        const speaker = msg.type === 'microphone' ? 'You' : (msg.speakerLabel || `Speaker ${(msg.speakerId || 0) + 1}`);
         return {
           order: index + 1,
-          speaker: speaker,
+          speaker: msg.username,
           text: msg.text
         };
       });
@@ -1143,12 +1139,10 @@ export const useTranscription = () => {
       allMessages.forEach((msg, index) => {
         console.log(`🔍 Message ${index}:`, {
           id: msg.id,
-          type: msg.type,
+          username: msg.username,
           text: msg.text,
           isFinal: msg.isFinal,
           isAccumulating: msg.isAccumulating,
-          speakerId: msg.speakerId,
-          speakerLabel: msg.speakerLabel,
           timestamp: msg.timestamp
         });
       });
@@ -1158,9 +1152,9 @@ export const useTranscription = () => {
       console.log('🔍 Messages with text content:', messagesWithText);
       console.log('🔍 Messages with text count:', messagesWithText.length);
       
-      const conversation = messagesWithText
-        .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
-        .join('\n');
+        const conversation = messagesWithText
+          .map(msg => `${msg.username}: ${msg.text}`)
+          .join('\n');
       
       console.log('⏰ First DISCO analysis triggered (after 20s). Conversation length:', conversation.length);
       
@@ -1181,12 +1175,10 @@ export const useTranscription = () => {
         allMessages.forEach((msg, index) => {
           console.log(`🔍 Message ${index}:`, {
             id: msg.id,
-            type: msg.type,
+            username: msg.username,
             text: msg.text,
             isFinal: msg.isFinal,
             isAccumulating: msg.isAccumulating,
-            speakerId: msg.speakerId,
-            speakerLabel: msg.speakerLabel,
             timestamp: msg.timestamp
           });
         });
@@ -1197,7 +1189,7 @@ export const useTranscription = () => {
         console.log('🔍 Messages with text count:', messagesWithText.length);
         
         const conversation = messagesWithText
-          .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
+          .map(msg => `${msg.username}: ${msg.text}`)
           .join('\n');
         
         console.log('⏰ Regular DISCO analysis triggered (every 10s). Conversation length:', conversation.length);
@@ -1227,75 +1219,33 @@ export const useTranscription = () => {
   }, []);
 
   // Message management
-  const addSystemMessage = useCallback((speakerId: number, speakerLabel: string, text: string, isFinal: boolean = true) => {
+  const addTranscriptionMessage = useCallback((username: string, text: string, isFinal: boolean = true) => {
     // Always create a new message for each incoming transcript
-    console.log('Adding system message:', { speakerId, speakerLabel, text, isFinal });
+    const messageData = {
+      username: username,
+      text: text
+    };
+    
+    console.log('=== INCOMING WEBSOCKET DATA ===');
+    console.log('Raw message data:', messageData);
+    console.log('Processed into format:', messageData);
+    console.log('================================');
+    
     const message: TranscriptionMessage = {
       id: `${Date.now()}_${Math.random()}`,
-      type: 'system',
-      speakerId,
-      speakerLabel,
+      username: username,
       text: text.trim(),
       timestamp: new Date(),
       isFinal
     };
+    
     setAllMessages(prev => [...prev, message]);
   }, []);
 
   const addMicMessage = useCallback((text: string, isFinal: boolean = true) => {
-    setAllMessages(prev => {
-      const newMessages = [...prev];
-      const lastMicIndex = newMessages.findLastIndex(
-        msg => msg.type === 'microphone' && msg.isAccumulating
-      );
-      
-      if (isFinal) {
-        if (lastMicIndex !== -1) {
-          // Finalize existing accumulating message
-          newMessages[lastMicIndex] = {
-            ...newMessages[lastMicIndex],
-            text: text.trim(),
-            timestamp: new Date(),
-            isFinal: true,
-            isAccumulating: false
-          };
-        } else {
-          // Add new final message
-          const message: TranscriptionMessage = {
-            id: `${Date.now()}_${Math.random()}`,
-            type: 'microphone',
-            text: text.trim(),
-            timestamp: new Date(),
-            isFinal: true,
-            isAccumulating: false
-          };
-          newMessages.push(message);
-        }
-      } else {
-        // Interim message
-        if (lastMicIndex !== -1) {
-          // Update existing accumulating message
-          newMessages[lastMicIndex] = {
-            ...newMessages[lastMicIndex],
-            text: text.trim(),
-            timestamp: new Date()
-          };
-        } else {
-          // Add new accumulating message
-          const message: TranscriptionMessage = {
-            id: `${Date.now()}_${Math.random()}`,
-            type: 'microphone',
-            text: text.trim(),
-            timestamp: new Date(),
-            isFinal: false,
-            isAccumulating: true
-          };
-          newMessages.push(message);
-        }
-      }
-      return newMessages;
-    });
-  }, []);
+    // Use the new addTranscriptionMessage function
+    addTranscriptionMessage('Microphone', text, isFinal);
+  }, [addTranscriptionMessage]);
 
   // Timer functions (removed burst timer for real-time updates)
 
@@ -1305,19 +1255,19 @@ export const useTranscription = () => {
     }
     
     systemBurstTimerRef.current = setInterval(() => {
-      // Finalize any accumulating system messages
-      setAllMessages(prev => {
-        if (prev.length && prev[prev.length - 1].isAccumulating) {
-          const updatedMessages = [...prev];
-          updatedMessages[updatedMessages.length - 1] = {
-            ...updatedMessages[updatedMessages.length - 1],
-            isAccumulating: false,
-            isFinal: true
-          };
-          return updatedMessages;
-        }
-        return prev;
-      });
+        // Finalize any accumulating messages
+        setAllMessages(prev => {
+          if (prev.length && prev[prev.length - 1].isAccumulating) {
+            const updatedMessages = [...prev];
+            updatedMessages[updatedMessages.length - 1] = {
+              ...updatedMessages[updatedMessages.length - 1],
+              isAccumulating: false,
+              isFinal: true
+            };
+            return updatedMessages;
+          }
+          return prev;
+        });
     }, 5000);
   }, []);
 
@@ -1453,7 +1403,9 @@ export const useTranscription = () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('Received data from ngrok WebSocket:', data);
+          console.log('=== RAW WEBSOCKET DATA ===');
+          console.log('Full incoming data:', data);
+          console.log('==========================');
           
           // Only process transcript data, ignore log messages
           if (data && data.data && data.data.data && data.data.data.words) {
@@ -1465,13 +1417,15 @@ export const useTranscription = () => {
             
             if (text.trim()) {
               // Use participant name if available, otherwise use "Speaker"
-              const speakerName = participant?.name || 'Speaker';
-              const speakerId = participant?.id || 0;
+              const username = participant?.name || 'Speaker';
               
-              console.log(`Extracted text: "${text}" from ${speakerName}`);
+              console.log('=== PROCESSING TRANSCRIPT ===');
+              console.log('Extracted text:', text);
               console.log('Participant data:', participant);
-              console.log('Speaker name:', speakerName);
-              addSystemMessage(speakerId, speakerName, text, true);
+              console.log('Username:', username);
+              console.log('=============================');
+              
+              addTranscriptionMessage(username, text, true);
             }
           } else if (data && data.log) {
             // This is a log message, ignore it completely
@@ -1551,7 +1505,9 @@ export const useTranscription = () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('Received data from ngrok WebSocket (system):', data);
+          console.log('=== RAW WEBSOCKET DATA (SYSTEM) ===');
+          console.log('Full incoming data:', data);
+          console.log('===================================');
           
           // Only process transcript data, ignore log messages
           if (data && data.data && data.data.data && data.data.data.words) {
@@ -1563,13 +1519,15 @@ export const useTranscription = () => {
             
             if (text.trim()) {
               // Use participant name if available, otherwise use "Speaker"
-              const speakerName = participant?.name || 'Speaker';
-              const speakerId = participant?.id || 0;
+              const username = participant?.name || 'Speaker';
               
-              console.log(`Extracted text (system): "${text}" from ${speakerName}`);
-              console.log('Participant data (system):', participant);
-              console.log('Speaker name (system):', speakerName);
-              addSystemMessage(speakerId, speakerName, text, true);
+              console.log('=== PROCESSING TRANSCRIPT (SYSTEM) ===');
+              console.log('Extracted text:', text);
+              console.log('Participant data:', participant);
+              console.log('Username:', username);
+              console.log('=====================================');
+              
+              addTranscriptionMessage(username, text, true);
             }
           } else if (data && data.log) {
             // This is a log message, ignore it completely
@@ -1612,7 +1570,7 @@ export const useTranscription = () => {
       console.error('Error starting system transcription:', error);
       setSystemTranscriptionError('Failed to start system transcription');
     }
-  }, [diarizationEnabled, setupSystemAudioProcessing, addSystemMessage, startSystemBurstTimer, setupWebSocketHeartbeat, cleanupWebSocketHeartbeat, reconnectWebSocket]);
+  }, [diarizationEnabled, setupSystemAudioProcessing, addTranscriptionMessage, startSystemBurstTimer, setupWebSocketHeartbeat, cleanupWebSocketHeartbeat, reconnectWebSocket]);
 
   // Recording functions
   const startSystemRecording = useCallback(async () => {
@@ -2056,16 +2014,14 @@ export const useTranscription = () => {
       totalMessages: allMessages.length,
       messages: allMessages.map(msg => ({
         id: msg.id,
-        type: msg.type,
-        speaker: msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`,
-        speakerLabel: msg.speakerLabel,
+        username: msg.username,
         text: msg.text,
         timestamp: msg.timestamp,
         isFinal: msg.isFinal
       })),
       conversationText: allMessages
         .filter(msg => msg.text.trim())
-        .map(msg => `${msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`}: ${msg.text}`)
+        .map(msg => `${msg.username}: ${msg.text}`)
         .join('\n'),
       callDuration: recordingTime,
       speakers: Array.from(systemSpeakers.entries()).map(([id, color]) => ({
@@ -2152,7 +2108,7 @@ export const useTranscription = () => {
         messages: allMessages
           .filter(msg => msg.text.trim())
           .map(msg => ({
-            speaker: msg.type === 'microphone' ? 'You' : `Speaker ${(msg.speakerId || 0) + 1}`,
+            speaker: msg.username,
             text: msg.text
           }))
       },

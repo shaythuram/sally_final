@@ -291,15 +291,10 @@ export default function TranscriptionPage() {
                       <div
                         key={message.id}
                         className="p-3 rounded-lg max-w-[80%] bg-gray-100 text-gray-900 mr-auto"
-                        style={
-                          message.type === 'system' && diarizationEnabled && message.speakerId !== undefined
-                            ? { borderLeft: `4px solid ${getSpeakerColor(message.speakerId)}` }
-                            : {}
-                        }
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{message.speakerLabel || 'Speaker'}</Badge>
+                            <Badge variant="secondary">{message.username || 'Speaker'}</Badge>
                             {!message.isFinal && (
                               <Badge variant="outline" className="text-xs">
                                 Live

@@ -17,7 +17,6 @@ interface TranscriptionContextType {
   systemSpeakers: Map<number, string>
   diarizationEnabled: boolean
   allMessages: TranscriptionMessage[]
-  currentMicMessage: string
   
   // DISCO Analysis state
   discoData: DiscoData
