@@ -1389,27 +1389,15 @@ export const useTranscription = () => {
       micProcessorRef.current = processor;
       
       processor.onaudioprocess = (event) => {
-        if (micWsRef.current && micWsRef.current.readyState === WebSocket.OPEN) {
-          const inputData = event.inputBuffer.getChannelData(0);
-          
-          // Check if there's actual audio data (not silence)
-          const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
-          
-          if (hasAudio) {
-            // Convert float32 to int16
-            const int16Data = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              int16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-            }
-            
-            // Convert to base64 and send
-            const base64Data = btoa(String.fromCharCode(...new Uint8Array(int16Data.buffer)));
-            
-            micWsRef.current.send(JSON.stringify({
-              type: 'audio_data',
-              data: base64Data
-            }));
-          }
+        // Audio processing is disabled since we're only receiving messages from ngrok WebSocket
+        // The WebSocket connection is used for receiving data, not sending audio
+        const inputData = event.inputBuffer.getChannelData(0);
+        
+        // Check if there's actual audio data (not silence) - for logging purposes only
+        const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
+        
+        if (hasAudio) {
+          console.log('Audio detected from microphone (not sending to WebSocket)');
         }
       };
       
@@ -1441,22 +1429,15 @@ export const useTranscription = () => {
       systemProcessorRef.current = processor;
       
       processor.onaudioprocess = (event) => {
-        if (systemWsRef.current && systemWsRef.current.readyState === WebSocket.OPEN) {
-          const inputData = event.inputBuffer.getChannelData(0);
-          
-          // Convert float32 to int16
-          const int16Data = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            int16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-          }
-          
-          // Convert to base64 and send
-          const base64Data = btoa(String.fromCharCode(...new Uint8Array(int16Data.buffer)));
-          
-          systemWsRef.current.send(JSON.stringify({
-            type: 'audio_data',
-            data: base64Data
-          }));
+        // Audio processing is disabled since we're only receiving messages from ngrok WebSocket
+        // The WebSocket connection is used for receiving data, not sending audio
+        const inputData = event.inputBuffer.getChannelData(0);
+        
+        // Check if there's actual audio data (not silence) - for logging purposes only
+        const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
+        
+        if (hasAudio) {
+          console.log('Audio detected from system (not sending to WebSocket)');
         }
       };
       
@@ -1471,8 +1452,7 @@ export const useTranscription = () => {
   }, []);
 
   // WebSocket connections
-  // OPTIMIZED: Using single WebSocket connection for both audio streams
-  // This reduces transcription server connections from 2 to 1
+  // Using ngrok WebSocket connection instead of Deepgram
   const startMicTranscription = useCallback(async (stream: MediaStream) => {
     try {
       // Check if connection already exists
@@ -1481,21 +1461,16 @@ export const useTranscription = () => {
         return;
       }
       
-      // Connect to WebSocket server
-      console.log('🔌 Creating NEW microphone WebSocket connection to transcription server');
-      const ws = new WebSocket('ws://localhost:3001');
+      // Connect to ngrok WebSocket server
+      console.log('🔌 Creating NEW microphone WebSocket connection to ngrok server');
+      const ws = new WebSocket('wss://399d80c50137.ngrok-free.app');
       micWsRef.current = ws;
       
       ws.onopen = () => {
-        console.log('Microphone WebSocket connected successfully');
+        console.log('Microphone WebSocket connected successfully to ngrok');
         setMicTranscribing(true);
         setTranscriptionError('');
         micWsReconnectAttemptsRef.current = 0; // Reset reconnection attempts
-        
-        // Send start transcription message
-        ws.send(JSON.stringify({
-          type: 'start_transcription'
-        }));
         
         // Set up audio processing
         setupMicAudioProcessing(stream);
@@ -1505,24 +1480,23 @@ export const useTranscription = () => {
       };
       
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        switch (data.type) {
-          case 'transcription':
-            if (data.transcript && data.transcript.trim()) {
-              // Add real-time microphone message
-              addMicMessage(data.transcript, data.is_final);
-            }
-            break;
-            
-          case 'transcription_stopped':
-            setMicTranscribing(false);
-            break;
-            
-          case 'error':
-            setTranscriptionError(data.message);
-            setMicTranscribing(false);
-            break;
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Received data from ngrok WebSocket:', data);
+          
+          // Handle any data received from the ngrok WebSocket
+          // For now, we'll display whatever we receive as a message
+          if (data && typeof data === 'object') {
+            // Convert the received data to a displayable message
+            const messageText = JSON.stringify(data, null, 2);
+            addMicMessage(messageText, true);
+          } else if (typeof data === 'string') {
+            addMicMessage(data, true);
+          }
+        } catch (e) {
+          console.log('Raw message from ngrok WebSocket:', event.data);
+          // If it's not JSON, treat it as plain text
+          addMicMessage(event.data, true);
         }
       };
       
@@ -1561,23 +1535,17 @@ export const useTranscription = () => {
         return;
       }
       
-      // Connect to WebSocket server for system audio
-      console.log('🔌 Creating NEW system WebSocket connection to transcription server');
-      const ws = new WebSocket('ws://localhost:3001');
+      // Connect to ngrok WebSocket server for system audio
+      console.log('🔌 Creating NEW system WebSocket connection to ngrok server');
+      const ws = new WebSocket('wss://399d80c50137.ngrok-free.app');
       systemWsRef.current = ws;
       
       ws.onopen = () => {
-        console.log('System WebSocket connected successfully');
+        console.log('System WebSocket connected successfully to ngrok');
         setSystemTranscribing(true);
         setSystemTranscriptionError('');
         setSystemSpeakers(new Map()); // Reset speakers for new session
         systemWsReconnectAttemptsRef.current = 0; // Reset reconnection attempts
-        
-        // Send start transcription message with diarization setting
-        ws.send(JSON.stringify({
-          type: 'start_transcription',
-          diarization: diarizationEnabled
-        }));
         
         // Set up audio processing for system audio
         setupSystemAudioProcessing(stream);
@@ -1592,31 +1560,23 @@ export const useTranscription = () => {
       };
       
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        switch (data.type) {
-          case 'transcription':
-            if (data.transcript && data.transcript.trim()) {
-              if (data.is_final) {
-                // Add system message immediately for chat format
-                addSystemMessage(
-                  data.speaker || 0, 
-                  data.speaker_label || 'Speaker 1', 
-                  data.transcript, 
-                  true
-                );
-              }
-            }
-            break;
-            
-          case 'transcription_stopped':
-            setSystemTranscribing(false);
-            break;
-            
-          case 'error':
-            setSystemTranscriptionError(data.message);
-            setSystemTranscribing(false);
-            break;
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Received data from ngrok WebSocket (system):', data);
+          
+          // Handle any data received from the ngrok WebSocket
+          // For now, we'll display whatever we receive as a system message
+          if (data && typeof data === 'object') {
+            // Convert the received data to a displayable message
+            const messageText = JSON.stringify(data, null, 2);
+            addSystemMessage(0, 'System', messageText, true);
+          } else if (typeof data === 'string') {
+            addSystemMessage(0, 'System', data, true);
+          }
+        } catch (e) {
+          console.log('Raw message from ngrok WebSocket (system):', event.data);
+          // If it's not JSON, treat it as plain text
+          addSystemMessage(0, 'System', event.data, true);
         }
       };
       

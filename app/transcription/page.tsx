@@ -42,7 +42,6 @@ export default function TranscriptionPage() {
     systemSpeakers,
     diarizationEnabled,
     allMessages,
-    currentMicMessage,
     
     // Refs
     systemVideoRef,
@@ -82,7 +81,7 @@ export default function TranscriptionPage() {
                   <h1 className="text-xl font-semibold">Sally</h1>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Live Transcription
+                  WebSocket Connection
                 </div>
               </div>
 
@@ -90,7 +89,7 @@ export default function TranscriptionPage() {
                 <div className="flex items-center gap-2 text-sm">
                   <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`} />
                   <span className="text-muted-foreground">
-                    {isRecording ? 'Recording' : 'Stopped'}
+                    {isRecording ? 'Connected' : 'Disconnected'}
                   </span>
                 </div>
                 {isRecording && (
@@ -108,8 +107,8 @@ export default function TranscriptionPage() {
           {/* Page Header */}
           <div className="flex items-center gap-4 mb-6 flex-shrink-0">
             <div>
-              <h1 className="text-2xl font-bold">Live Transcription</h1>
-              <p className="text-muted-foreground">Record and transcribe system audio and microphone input in real-time</p>
+              <h1 className="text-2xl font-bold">WebSocket Connection</h1>
+              <p className="text-muted-foreground">Connect to ngrok WebSocket and display received messages in real-time</p>
             </div>
           </div>
 
@@ -118,10 +117,10 @@ export default function TranscriptionPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
-                Recording Controls
+                WebSocket Connection Controls
               </CardTitle>
               <CardDescription>
-                Configure your recording settings and start live transcription
+                Configure your connection settings and start receiving WebSocket messages
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -173,7 +172,7 @@ export default function TranscriptionPage() {
                   className="flex-1"
                 >
                   <Play className="h-4 w-4 mr-2" />
-                  Start Transcription
+                  Connect to WebSocket
                 </Button>
                 
                 <Button
@@ -184,7 +183,7 @@ export default function TranscriptionPage() {
                   className="flex-1"
                 >
                   <Square className="h-4 w-4 mr-2" />
-                  Stop Transcription
+                  Disconnect WebSocket
                 </Button>
               </div>
 
@@ -199,10 +198,10 @@ export default function TranscriptionPage() {
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
                     )}
-                    <span className="text-sm font-medium">Microphone</span>
+                    <span className="text-sm font-medium">WebSocket (Mic)</span>
                   </div>
                   <Badge variant={micTranscribing ? "default" : "secondary"}>
-                    {micTranscribing ? "Active" : "Inactive"}
+                    {micTranscribing ? "Connected" : "Disconnected"}
                   </Badge>
                 </div>
 
@@ -215,10 +214,10 @@ export default function TranscriptionPage() {
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
                     )}
-                    <span className="text-sm font-medium">System Audio</span>
+                    <span className="text-sm font-medium">WebSocket (System)</span>
                   </div>
                   <Badge variant={systemTranscribing ? "default" : "secondary"}>
-                    {systemTranscribing ? "Active" : "Inactive"}
+                    {systemTranscribing ? "Connected" : "Disconnected"}
                   </Badge>
                 </div>
               </div>
@@ -267,30 +266,16 @@ export default function TranscriptionPage() {
             </Card>
           )}
 
-          {/* Current Message Preview */}
-          {currentMicMessage && (
-            <Card className="mb-6 flex-shrink-0">
-              <CardContent className="pt-6">
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center gap-2 text-blue-700 mb-2">
-                    <Mic className="h-4 w-4" />
-                    <span className="text-sm font-medium">You are saying:</span>
-                  </div>
-                  <p className="text-sm text-blue-600 italic">{currentMicMessage}</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Live Transcription Chat */}
           <Card className="flex-1 flex flex-col min-h-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Volume2 className="h-5 w-5" />
-                Live Transcription
+                WebSocket Messages
               </CardTitle>
               <CardDescription>
-                Real-time transcription of system audio and microphone input
+                Real-time messages received from ngrok WebSocket connection
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col min-h-0">
@@ -299,7 +284,7 @@ export default function TranscriptionPage() {
                   {allMessages.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <VolumeX className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No transcription yet. Start recording to see live transcription.</p>
+                      <p>No WebSocket messages yet. Start recording to connect to ngrok WebSocket.</p>
                     </div>
                   ) : (
                     allMessages.map((message) => (
@@ -320,20 +305,10 @@ export default function TranscriptionPage() {
                           <div className="flex items-center gap-2">
                             {message.type === 'microphone' ? (
                               <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
-                                You
-                              </Badge>
-                            ) : diarizationEnabled && message.speakerLabel ? (
-                              <Badge
-                                className="text-xs"
-                                style={{
-                                  backgroundColor: getSpeakerColor(message.speakerId || 0),
-                                  color: 'white',
-                                }}
-                              >
-                                {message.speakerLabel}
+                                WebSocket (Mic)
                               </Badge>
                             ) : (
-                              <Badge variant="secondary">System Audio</Badge>
+                              <Badge variant="secondary">WebSocket (System)</Badge>
                             )}
                             {!message.isFinal && (
                               <Badge variant="outline" className="text-xs">
@@ -345,7 +320,9 @@ export default function TranscriptionPage() {
                             {formatMessageTime(message.timestamp)}
                           </span>
                         </div>
-                        <p className="text-sm leading-relaxed">{message.text}</p>
+                        <pre className="text-sm leading-relaxed whitespace-pre-wrap font-mono bg-black/10 p-2 rounded">
+                          {message.text}
+                        </pre>
                       </div>
                     ))
                   )}
