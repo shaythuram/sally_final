@@ -170,7 +170,7 @@ export const useTranscription = () => {
             callData.callLink = data.call_link
           }
           // Transfer bot/meeting IDs from upcoming call to creation data
-          ;(callData as any).botId = (data as any)?.bot_id ?? ''
+          ;(callData as any).botId = (data as any)?.bot_id ?? '908e2224-097f-4031-8f59-a2409554d973'
           ;(callData as any).meetingId = (data as any)?.meeting_id ?? ''
         } catch {}
       }
@@ -204,8 +204,8 @@ export const useTranscription = () => {
         }
       } else {
         // Create new call with auto-generated ID
-        // Ensure default empty strings for bot/meeting ids when starting fresh
-        ;(callData as any).botId = (callData as any).botId ?? ''
+        // Ensure default values for bot/meeting ids when starting fresh
+        ;(callData as any).botId = (callData as any).botId ?? '908e2224-097f-4031-8f59-a2409554d973'
         ;(callData as any).meetingId = (callData as any).meetingId ?? ''
         newCall = await CallManager.createCall(callData, userId);
         if (!newCall) {
@@ -230,14 +230,15 @@ export const useTranscription = () => {
         title: newCall.title,
         company: newCall.company,
         call_id: newCall.call_id,
-        owner_id: newCall.owner_id
+        owner_id: newCall.owner_id,
+        bot_id: (newCall as any).bot_id || (callData as any).botId
       });
 
       setCurrentCall(newCall);
       setTranscriptEntries([]);
       
       // Start recording and transcription with the selected source
-      await startUnifiedRecordingWithSource(sources[0]);
+      await startUnifiedRecordingWithSource(sources[0], (callData as any).botId);
       
       return true;
     } catch (error) {
@@ -717,7 +718,7 @@ export const useTranscription = () => {
     // Wait before reconnecting
     unifiedWsReconnectTimeoutRef.current = setTimeout(async () => {
       try {
-        await startUnifiedTranscription(systemStream, micStream);
+        await startUnifiedTranscription(systemStream, micStream, currentCall?.bot_id);
         console.log('Unified WebSocket reconnected successfully');
         unifiedWsReconnectAttemptsRef.current = 0; // Reset attempts on successful reconnection
       } catch (error) {
@@ -1356,7 +1357,7 @@ export const useTranscription = () => {
 
   // Unified WebSocket connection
   // Using ngrok WebSocket connection instead of Deepgram
-  const startUnifiedTranscription = useCallback(async (systemStream?: MediaStream, micStream?: MediaStream) => {
+  const startUnifiedTranscription = useCallback(async (systemStream?: MediaStream, micStream?: MediaStream, botId?: string) => {
     try {
       // Check if connection already exists
       if (unifiedWsRef.current && unifiedWsRef.current.readyState === WebSocket.OPEN) {
@@ -1371,6 +1372,7 @@ export const useTranscription = () => {
       
       ws.onopen = () => {
         console.log('Unified WebSocket connected successfully to ngrok');
+        console.log('🤖 Bot ID for this call:', botId || 'No bot ID provided');
         setSystemTranscribing(true);
         setMicTranscribing(true);
         setSystemTranscriptionError('');
@@ -1406,21 +1408,36 @@ export const useTranscription = () => {
           if (data && data.data && data.data.data && data.data.data.words) {
             const words = data.data.data.words;
             const participant = data.data.data.participant;
+            const messageBotId = data.data.bot?.id;
             
-            // Extract text from words array
-            const text = words.map((word: any) => word.text).join(' ');
+            console.log('🤖 Bot ID check:');
+            console.log('  - Expected bot ID:', botId);
+            console.log('  - Message bot ID:', messageBotId);
+            console.log('  - Match:', messageBotId === botId);
             
-            if (text.trim()) {
-              // Use participant name if available, otherwise use "Speaker"
-              const username = participant?.name || 'Speaker';
+            // Only process if bot ID matches (or if no bot ID filter is set)
+            if (!botId || messageBotId === botId) {
+              // Extract text from words array
+              const text = words.map((word: any) => word.text).join(' ');
               
-              console.log('=== PROCESSING TRANSCRIPT (UNIFIED) ===');
-              console.log('Extracted text:', text);
-              console.log('Participant data:', participant);
-              console.log('Username:', username);
-              console.log('======================================');
-              
-              addTranscriptionMessage(username, text, true);
+              if (text.trim()) {
+                // Use participant name if available, otherwise use "Speaker"
+                const username = participant?.name || 'Speaker';
+                
+                console.log('✅ BOT ID MATCH - PROCESSING TRANSCRIPT (UNIFIED)');
+                console.log('Extracted text:', text);
+                console.log('Participant data:', participant);
+                console.log('Username:', username);
+                console.log('Bot ID confirmed:', messageBotId);
+                console.log('===============================================');
+                
+                addTranscriptionMessage(username, text, true);
+              }
+            } else {
+              console.log('❌ Bot ID mismatch - ignoring message');
+              console.log('  - Expected:', botId);
+              console.log('  - Received:', messageBotId);
+              return;
             }
           } else if (data && data.log) {
             // This is a log message, ignore it completely
@@ -1544,7 +1561,7 @@ export const useTranscription = () => {
 
       // Start unified transcription with system stream
       if (stream) {
-        await startUnifiedTranscription(stream);
+        await startUnifiedTranscription(stream, undefined, currentCall?.bot_id);
       } else {
         throw new Error('Failed to get media stream for system recording');
       }
@@ -1555,7 +1572,7 @@ export const useTranscription = () => {
     }
   }, [screenSources, selectedScreenSource, startUnifiedTranscription]);
 
-  const startSystemRecordingWithSource = useCallback(async (source: ScreenSource) => {
+  const startSystemRecordingWithSource = useCallback(async (source: ScreenSource, botId?: string) => {
     try {
       let stream: MediaStream | null = null;
       const isElectron = typeof window !== 'undefined' && (window as any).electronAPI;
@@ -1623,7 +1640,7 @@ export const useTranscription = () => {
 
       // Start unified transcription with system stream
       if (stream) {
-        await startUnifiedTranscription(stream);
+        await startUnifiedTranscription(stream, undefined, botId);
       } else {
         throw new Error('Failed to get media stream for system recording');
       }
@@ -1634,7 +1651,7 @@ export const useTranscription = () => {
     }
   }, [startUnifiedTranscription]);
 
-  const startMicRecording = useCallback(async () => {
+  const startMicRecording = useCallback(async (botId?: string) => {
     try {
       // Get microphone access
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -1667,7 +1684,7 @@ export const useTranscription = () => {
       mediaRecorder.start();
 
       // Start unified transcription with mic stream
-      await startUnifiedTranscription(undefined, stream);
+      await startUnifiedTranscription(undefined, stream, botId);
 
     } catch (error) {
       console.error('Error starting microphone recording:', error);
@@ -1804,7 +1821,7 @@ export const useTranscription = () => {
     }
   }, [startSystemRecording, startMicRecording, startDiscoAnalysisInterval]);
 
-  const startUnifiedRecordingWithSource = useCallback(async (source: ScreenSource) => {
+  const startUnifiedRecordingWithSource = useCallback(async (source: ScreenSource, botId?: string) => {
     try {
       setIsRecording(true);
       setRecordingTime(0);
@@ -1825,10 +1842,10 @@ export const useTranscription = () => {
       setMicAudioChunks([]);
       
       // Start system recording with specific source
-      await startSystemRecordingWithSource(source);
+      await startSystemRecordingWithSource(source, botId);
       
       // Start microphone recording
-      await startMicRecording();
+      await startMicRecording(botId);
       
       // Start unified timer
       recordingTimerRef.current = setInterval(() => {
