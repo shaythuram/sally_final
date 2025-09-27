@@ -581,10 +581,21 @@ export const useTranscription = () => {
         }
         
         const aiSummaryResult = await aiSummaryResponse.json();
-        console.log('\ud83d\udce5 AI Summary API response:', JSON.stringify(aiSummaryResult, null, 2));
-        
+        console.log('📄 AI Summary API response:', JSON.stringify(aiSummaryResult, null, 2));
+
+        // Debug the response structure
+        console.log('🔍 Response keys:', Object.keys(aiSummaryResult || {}));
+        console.log('🔍 Has summary field:', !!aiSummaryResult?.summary);
+        console.log('🔍 Has response field:', !!aiSummaryResult?.response);
+        console.log('🔍 Summary value:', aiSummaryResult?.summary);
+        console.log('🔍 Response value:', aiSummaryResult?.response);
+
         // Store the AI summary response in ai_summary column (as text)
-        const summaryText = aiSummaryResult.summary || aiSummaryResult.response || JSON.stringify(aiSummaryResult);
+        const summaryText = aiSummaryResult.summary.overview || aiSummaryResult.response || JSON.stringify(aiSummaryResult);
+        console.log('📝 Final summary text:', summaryText);
+        console.log('📝 Summary text type:', typeof summaryText);
+        console.log('📝 Summary text length:', summaryText?.length || 0);
+
         await CallManager.updateCallSummary(currentCall.call_id, summaryText);
         console.log('\u2705 AI Summary saved to database:', summaryText.substring(0, 100) + '...');
         

@@ -425,20 +425,39 @@ export class CallManager {
 
   // Update call with AI summary
   static async updateCallSummary(callId: string, summary: string): Promise<boolean> {
+    console.log('🔄 ===== UPDATING CALL SUMMARY =====');
+    console.log('📞 Call ID:', callId);
+    console.log('📝 Summary Length:', summary?.length || 0, 'characters');
+    console.log('�� Summary Preview:', summary?.substring(0, 100) + (summary?.length > 100 ? '...' : ''));
+    
     try {
+      console.log('🚀 Sending Supabase update request...');
+      console.log('🎯 Table: calls');
+      console.log('🔍 Filter: call_id =', callId);
+      console.log('�� Update: ai_summary =', summary?.substring(0, 50) + '...');
+      
       const { error } = await supabase
         .from('calls')
         .update({ ai_summary: summary })
         .eq('call_id', callId)
       
+      console.log('📡 Supabase response received');
+      
       if (error) {
-        console.error('Error updating summary:', error)
+        console.error('❌ Supabase update error:', error);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
         return false
       }
       
+      console.log('✅ AI Summary successfully updated in database');
+      console.log('==========================================');
       return true
+      
     } catch (error) {
-      console.error('Error updating summary:', error)
+      console.error('💥 Exception during summary update:', error);
+      console.error('💥 Error type:', typeof error);
+      console.error('💥 Error message:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('==========================================');
       return false
     }
   }
