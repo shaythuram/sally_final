@@ -29,6 +29,14 @@ export interface DocumentInfo {
 }
 
 export class UpcomingCallsManager {
+  // FUNCTIONS TO BE REPLACED: Generate placeholder unique IDs for bot and meeting
+  private static generatePlaceholderId(): string {
+    // FUNCTIONS TO BE REPLACED: use real ID generation from your bot/meeting systems
+    const randomPart = Math.random().toString(36).slice(2)
+    const timePart = Date.now().toString(36)
+    return `${timePart}-${randomPart}`
+  }
+
   // Get a single upcoming call by ID
   static async getUpcomingCallById(callId: string): Promise<UpcomingCall | null> {
     try {
@@ -68,6 +76,14 @@ export class UpcomingCallsManager {
     }
   ): Promise<UpcomingCall | null> {
     try {
+      // FUNCTIONS TO BE REPLACED: If bot/meeting IDs are not provided, generate placeholder IDs
+      const botId = callData.botId && callData.botId.trim() !== ''
+        ? callData.botId
+        : UpcomingCallsManager.generatePlaceholderId()
+      const meetingId = callData.meetingId && callData.meetingId.trim() !== ''
+        ? callData.meetingId
+        : UpcomingCallsManager.generatePlaceholderId()
+
       const { data, error } = await supabase
         .from('upcoming_calls')
         .insert([{
@@ -83,8 +99,9 @@ export class UpcomingCallsManager {
           call_link: callData.callLink ?? null,
           assistant_id: callData.assistantId ?? null,
           thread_id: callData.threadId ?? null,
-          bot_id: callData.botId ?? '',
-          meeting_id: callData.meetingId ?? ''
+          // FUNCTIONS TO BE REPLACED: placeholder IDs below
+          bot_id: botId,
+          meeting_id: meetingId
         }])
         .select()
         .single()
