@@ -81,7 +81,7 @@ export default function TranscriptionPage() {
                   <h1 className="text-xl font-semibold">Sally</h1>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  WebSocket Connection
+                  Live Transcription
                 </div>
               </div>
 
@@ -89,7 +89,7 @@ export default function TranscriptionPage() {
                 <div className="flex items-center gap-2 text-sm">
                   <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`} />
                   <span className="text-muted-foreground">
-                    {isRecording ? 'Connected' : 'Disconnected'}
+                    {isRecording ? 'Recording' : 'Stopped'}
                   </span>
                 </div>
                 {isRecording && (
@@ -107,8 +107,8 @@ export default function TranscriptionPage() {
           {/* Page Header */}
           <div className="flex items-center gap-4 mb-6 flex-shrink-0">
             <div>
-              <h1 className="text-2xl font-bold">WebSocket Connection</h1>
-              <p className="text-muted-foreground">Connect to ngrok WebSocket and display received messages in real-time</p>
+              <h1 className="text-2xl font-bold">Live Transcription</h1>
+              <p className="text-muted-foreground">Connect to ngrok WebSocket and display real-time transcription</p>
             </div>
           </div>
 
@@ -117,10 +117,10 @@ export default function TranscriptionPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
-                WebSocket Connection Controls
+                Transcription Controls
               </CardTitle>
               <CardDescription>
-                Configure your connection settings and start receiving WebSocket messages
+                Configure your connection settings and start live transcription
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -172,7 +172,7 @@ export default function TranscriptionPage() {
                   className="flex-1"
                 >
                   <Play className="h-4 w-4 mr-2" />
-                  Connect to WebSocket
+                  Start Transcription
                 </Button>
                 
                 <Button
@@ -183,7 +183,7 @@ export default function TranscriptionPage() {
                   className="flex-1"
                 >
                   <Square className="h-4 w-4 mr-2" />
-                  Disconnect WebSocket
+                  Stop Transcription
                 </Button>
               </div>
 
@@ -198,10 +198,10 @@ export default function TranscriptionPage() {
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
                     )}
-                    <span className="text-sm font-medium">WebSocket (Mic)</span>
+                    <span className="text-sm font-medium">Microphone</span>
                   </div>
                   <Badge variant={micTranscribing ? "default" : "secondary"}>
-                    {micTranscribing ? "Connected" : "Disconnected"}
+                    {micTranscribing ? "Active" : "Inactive"}
                   </Badge>
                 </div>
 
@@ -214,10 +214,10 @@ export default function TranscriptionPage() {
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
                     )}
-                    <span className="text-sm font-medium">WebSocket (System)</span>
+                    <span className="text-sm font-medium">System Audio</span>
                   </div>
                   <Badge variant={systemTranscribing ? "default" : "secondary"}>
-                    {systemTranscribing ? "Connected" : "Disconnected"}
+                    {systemTranscribing ? "Active" : "Inactive"}
                   </Badge>
                 </div>
               </div>
@@ -272,10 +272,10 @@ export default function TranscriptionPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Volume2 className="h-5 w-5" />
-                WebSocket Messages
+                Live Transcription
               </CardTitle>
               <CardDescription>
-                Real-time messages received from ngrok WebSocket connection
+                Real-time transcription from ngrok WebSocket connection
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col min-h-0">
@@ -284,7 +284,7 @@ export default function TranscriptionPage() {
                   {allMessages.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <VolumeX className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No WebSocket messages yet. Start recording to connect to ngrok WebSocket.</p>
+                      <p>No transcription yet. Start recording to connect to ngrok WebSocket.</p>
                     </div>
                   ) : (
                     allMessages.map((message) => (
@@ -305,10 +305,10 @@ export default function TranscriptionPage() {
                           <div className="flex items-center gap-2">
                             {message.type === 'microphone' ? (
                               <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
-                                WebSocket (Mic)
+                                {message.speakerLabel || 'You'}
                               </Badge>
                             ) : (
-                              <Badge variant="secondary">WebSocket (System)</Badge>
+                              <Badge variant="secondary">{message.speakerLabel || 'Speaker'}</Badge>
                             )}
                             {!message.isFinal && (
                               <Badge variant="outline" className="text-xs">
@@ -320,9 +320,7 @@ export default function TranscriptionPage() {
                             {formatMessageTime(message.timestamp)}
                           </span>
                         </div>
-                        <pre className="text-sm leading-relaxed whitespace-pre-wrap font-mono bg-black/10 p-2 rounded">
-                          {message.text}
-                        </pre>
+                        <p className="text-sm leading-relaxed">{message.text}</p>
                       </div>
                     ))
                   )}

@@ -1484,10 +1484,24 @@ export const useTranscription = () => {
           const data = JSON.parse(event.data);
           console.log('Received data from ngrok WebSocket:', data);
           
-          // Handle any data received from the ngrok WebSocket
-          // For now, we'll display whatever we receive as a message
-          if (data && typeof data === 'object') {
-            // Convert the received data to a displayable message
+          // Parse the transcript data to extract just the text
+          if (data && data.data && data.data.data && data.data.data.words) {
+            const words = data.data.data.words;
+            const participant = data.data.data.participant;
+            
+            // Extract text from words array
+            const text = words.map((word: any) => word.text).join(' ');
+            
+            if (text.trim()) {
+              // Use participant name if available, otherwise use "Speaker"
+              const speakerName = participant?.name || 'Speaker';
+              const speakerId = participant?.id || 0;
+              
+              console.log(`Extracted text: "${text}" from ${speakerName}`);
+              addMicMessage(text, true);
+            }
+          } else if (data && typeof data === 'object') {
+            // Fallback: if structure is different, show the raw data
             const messageText = JSON.stringify(data, null, 2);
             addMicMessage(messageText, true);
           } else if (typeof data === 'string') {
@@ -1564,10 +1578,24 @@ export const useTranscription = () => {
           const data = JSON.parse(event.data);
           console.log('Received data from ngrok WebSocket (system):', data);
           
-          // Handle any data received from the ngrok WebSocket
-          // For now, we'll display whatever we receive as a system message
-          if (data && typeof data === 'object') {
-            // Convert the received data to a displayable message
+          // Parse the transcript data to extract just the text
+          if (data && data.data && data.data.data && data.data.data.words) {
+            const words = data.data.data.words;
+            const participant = data.data.data.participant;
+            
+            // Extract text from words array
+            const text = words.map((word: any) => word.text).join(' ');
+            
+            if (text.trim()) {
+              // Use participant name if available, otherwise use "Speaker"
+              const speakerName = participant?.name || 'Speaker';
+              const speakerId = participant?.id || 0;
+              
+              console.log(`Extracted text (system): "${text}" from ${speakerName}`);
+              addSystemMessage(speakerId, speakerName, text, true);
+            }
+          } else if (data && typeof data === 'object') {
+            // Fallback: if structure is different, show the raw data
             const messageText = JSON.stringify(data, null, 2);
             addSystemMessage(0, 'System', messageText, true);
           } else if (typeof data === 'string') {
