@@ -1428,14 +1428,9 @@ export default function DashboardPage() {
                                       <div
                                         className={`max-w-[80%] p-3 rounded-lg text-sm bg-white text-gray-700 border border-gray-200 ${message.isAccumulating ? 'opacity-80' : ''}`}
                                       >
-                                        <div className="flex items-center justify-between mb-1">
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-xs opacity-70">
-                                              {message.username || 'Speaker'}
-                                            </span>
-                                          </div>
+                                        <div className="flex items-center gap-1 mb-1">
                                           <span className="text-xs opacity-70">
-                                            {formatMessageTime(message.timestamp)}
+                                            {message.username || 'Speaker'}
                                           </span>
                                         </div>
                                         <div className="whitespace-pre-wrap break-words">
