@@ -290,11 +290,7 @@ export default function TranscriptionPage() {
                     allMessages.map((message) => (
                       <div
                         key={message.id}
-                        className={`p-3 rounded-lg max-w-[80%] ${
-                          message.type === 'microphone'
-                            ? 'bg-blue-500 text-white ml-auto'
-                            : 'bg-gray-100 text-gray-900 mr-auto'
-                        }`}
+                        className="p-3 rounded-lg max-w-[80%] bg-gray-100 text-gray-900 mr-auto"
                         style={
                           message.type === 'system' && diarizationEnabled && message.speakerId !== undefined
                             ? { borderLeft: `4px solid ${getSpeakerColor(message.speakerId)}` }
@@ -303,13 +299,7 @@ export default function TranscriptionPage() {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            {message.type === 'microphone' ? (
-                              <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
-                                {message.speakerLabel || 'You'}
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary">{message.speakerLabel || 'Speaker'}</Badge>
-                            )}
+                            <Badge variant="secondary">{message.speakerLabel || 'Speaker'}</Badge>
                             {!message.isFinal && (
                               <Badge variant="outline" className="text-xs">
                                 Live

@@ -1228,48 +1228,19 @@ export const useTranscription = () => {
 
   // Message management
   const addSystemMessage = useCallback((speakerId: number, speakerLabel: string, text: string, isFinal: boolean = true) => {
-    if (diarizationEnabled) {
-      // Individual speaker messages
-      const message: TranscriptionMessage = {
-        id: `${Date.now()}_${Math.random()}`,
-        type: 'system',
-        speakerId,
-        speakerLabel,
-        text: text.trim(),
-        timestamp: new Date(),
-        isFinal
-      };
-      setAllMessages(prev => [...prev, message]);
-    } else {
-      // Accumulate text for burst messages
-      setAllMessages(prev => {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.isAccumulating) {
-          // Add to existing accumulating message
-          const updatedMessages = [...prev];
-          updatedMessages[updatedMessages.length - 1] = {
-            ...lastMessage,
-            text: lastMessage.text + ' ' + text.trim(),
-            timestamp: new Date()
-          };
-          return updatedMessages;
-        } else {
-          // Create new accumulating message
-          const message: TranscriptionMessage = {
-            id: `${Date.now()}_${Math.random()}`,
-            type: 'system',
-            speakerId: 0,
-            speakerLabel: 'System Audio',
-            text: text.trim(),
-            timestamp: new Date(),
-            isFinal: false,
-            isAccumulating: true
-          };
-          return [...prev, message];
-        }
-      });
-    }
-  }, [diarizationEnabled]);
+    // Always create a new message for each incoming transcript
+    console.log('Adding system message:', { speakerId, speakerLabel, text, isFinal });
+    const message: TranscriptionMessage = {
+      id: `${Date.now()}_${Math.random()}`,
+      type: 'system',
+      speakerId,
+      speakerLabel,
+      text: text.trim(),
+      timestamp: new Date(),
+      isFinal
+    };
+    setAllMessages(prev => [...prev, message]);
+  }, []);
 
   const addMicMessage = useCallback((text: string, isFinal: boolean = true) => {
     setAllMessages(prev => {
@@ -1484,7 +1455,7 @@ export const useTranscription = () => {
           const data = JSON.parse(event.data);
           console.log('Received data from ngrok WebSocket:', data);
           
-          // Parse the transcript data to extract just the text
+          // Only process transcript data, ignore log messages
           if (data && data.data && data.data.data && data.data.data.words) {
             const words = data.data.data.words;
             const participant = data.data.data.participant;
@@ -1498,19 +1469,23 @@ export const useTranscription = () => {
               const speakerId = participant?.id || 0;
               
               console.log(`Extracted text: "${text}" from ${speakerName}`);
-              addMicMessage(text, true);
+              console.log('Participant data:', participant);
+              console.log('Speaker name:', speakerName);
+              addSystemMessage(speakerId, speakerName, text, true);
             }
-          } else if (data && typeof data === 'object') {
-            // Fallback: if structure is different, show the raw data
-            const messageText = JSON.stringify(data, null, 2);
-            addMicMessage(messageText, true);
-          } else if (typeof data === 'string') {
-            addMicMessage(data, true);
+          } else if (data && data.log) {
+            // This is a log message, ignore it completely
+            console.log('Ignoring log message:', data.log);
+            return;
+          } else {
+            // This is some other type of message, ignore it
+            console.log('Ignoring non-transcript message:', data);
+            return;
           }
         } catch (e) {
           console.log('Raw message from ngrok WebSocket:', event.data);
-          // If it's not JSON, treat it as plain text
-          addMicMessage(event.data, true);
+          // If it's not JSON, ignore it
+          return;
         }
       };
       
@@ -1578,7 +1553,7 @@ export const useTranscription = () => {
           const data = JSON.parse(event.data);
           console.log('Received data from ngrok WebSocket (system):', data);
           
-          // Parse the transcript data to extract just the text
+          // Only process transcript data, ignore log messages
           if (data && data.data && data.data.data && data.data.data.words) {
             const words = data.data.data.words;
             const participant = data.data.data.participant;
@@ -1592,19 +1567,23 @@ export const useTranscription = () => {
               const speakerId = participant?.id || 0;
               
               console.log(`Extracted text (system): "${text}" from ${speakerName}`);
+              console.log('Participant data (system):', participant);
+              console.log('Speaker name (system):', speakerName);
               addSystemMessage(speakerId, speakerName, text, true);
             }
-          } else if (data && typeof data === 'object') {
-            // Fallback: if structure is different, show the raw data
-            const messageText = JSON.stringify(data, null, 2);
-            addSystemMessage(0, 'System', messageText, true);
-          } else if (typeof data === 'string') {
-            addSystemMessage(0, 'System', data, true);
+          } else if (data && data.log) {
+            // This is a log message, ignore it completely
+            console.log('Ignoring log message (system):', data.log);
+            return;
+          } else {
+            // This is some other type of message, ignore it
+            console.log('Ignoring non-transcript message (system):', data);
+            return;
           }
         } catch (e) {
           console.log('Raw message from ngrok WebSocket (system):', event.data);
-          // If it's not JSON, treat it as plain text
-          addSystemMessage(0, 'System', event.data, true);
+          // If it's not JSON, ignore it
+          return;
         }
       };
       
