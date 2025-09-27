@@ -72,8 +72,7 @@ export const useTranscription = () => {
   const systemVideoRef = useRef<HTMLVideoElement>(null);
   const systemMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const micMediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const systemWsRef = useRef<WebSocket | null>(null);
-  const micWsRef = useRef<WebSocket | null>(null);
+  const unifiedWsRef = useRef<WebSocket | null>(null);
   const systemAudioContextRef = useRef<AudioContext | null>(null);
   const micAudioContextRef = useRef<AudioContext | null>(null);
   const systemProcessorRef = useRef<ScriptProcessorNode | null>(null);
@@ -95,10 +94,8 @@ export const useTranscription = () => {
   const [lastRecordingBlob, setLastRecordingBlob] = useState<Blob | null>(null);
   
   // WebSocket connection management
-  const systemWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const micWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const systemWsReconnectAttemptsRef = useRef<number>(0);
-  const micWsReconnectAttemptsRef = useRef<number>(0);
+  const unifiedWsReconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const unifiedWsReconnectAttemptsRef = useRef<number>(0);
   const maxReconnectAttempts = 5;
   const reconnectDelay = 2000; // 2 seconds
   const isCallActiveRef = useRef<boolean>(false);
@@ -682,83 +679,68 @@ export const useTranscription = () => {
   }, [currentCall]);
 
   // WebSocket connection health monitoring
-  const checkWebSocketHealth = useCallback((wsRef: React.MutableRefObject<WebSocket | null>, type: 'system' | 'mic') => {
+  const checkWebSocketHealth = useCallback((wsRef: React.MutableRefObject<WebSocket | null>) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn(`${type} WebSocket is not in OPEN state:`, wsRef.current?.readyState);
+      console.warn('Unified WebSocket is not in OPEN state:', wsRef.current?.readyState);
       return false;
     }
     return true;
   }, []);
 
-  const reconnectWebSocket = useCallback(async (type: 'system' | 'mic', stream?: MediaStream) => {
+  const reconnectWebSocket = useCallback(async (systemStream?: MediaStream, micStream?: MediaStream) => {
     if (!isCallActiveRef.current) {
-      console.log(`Call not active, skipping ${type} WebSocket reconnection`);
+      console.log('Call not active, skipping unified WebSocket reconnection');
       return;
     }
 
-    const attemptsRef = type === 'system' ? systemWsReconnectAttemptsRef : micWsReconnectAttemptsRef;
-    const timeoutRef = type === 'system' ? systemWsReconnectTimeoutRef : micWsReconnectTimeoutRef;
-    const wsRef = type === 'system' ? systemWsRef : micWsRef;
-
-    if (attemptsRef.current >= maxReconnectAttempts) {
-      console.error(`Max reconnection attempts reached for ${type} WebSocket`);
-      if (type === 'system') {
-        setSystemTranscriptionError('Failed to reconnect system WebSocket after multiple attempts');
-      } else {
-        setTranscriptionError('Failed to reconnect microphone WebSocket after multiple attempts');
-      }
+    if (unifiedWsReconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached for unified WebSocket');
+      setSystemTranscriptionError('Failed to reconnect WebSocket after multiple attempts');
+      setTranscriptionError('Failed to reconnect WebSocket after multiple attempts');
       return;
     }
 
-    attemptsRef.current += 1;
-    console.log(`Attempting to reconnect ${type} WebSocket (attempt ${attemptsRef.current}/${maxReconnectAttempts})`);
+    unifiedWsReconnectAttemptsRef.current += 1;
+    console.log(`Attempting to reconnect unified WebSocket (attempt ${unifiedWsReconnectAttemptsRef.current}/${maxReconnectAttempts})`);
 
     // Clear existing timeout
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
+    if (unifiedWsReconnectTimeoutRef.current) {
+      clearTimeout(unifiedWsReconnectTimeoutRef.current);
     }
 
     // Close existing connection if any
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    if (unifiedWsRef.current) {
+      unifiedWsRef.current.close();
+      unifiedWsRef.current = null;
     }
 
     // Wait before reconnecting
-    timeoutRef.current = setTimeout(async () => {
+    unifiedWsReconnectTimeoutRef.current = setTimeout(async () => {
       try {
-        if (type === 'system' && stream) {
-          await startSystemTranscription(stream);
-        } else if (type === 'mic' && stream) {
-          await startMicTranscription(stream);
-        }
-        console.log(`${type} WebSocket reconnected successfully`);
-        attemptsRef.current = 0; // Reset attempts on successful reconnection
+        await startUnifiedTranscription(systemStream, micStream);
+        console.log('Unified WebSocket reconnected successfully');
+        unifiedWsReconnectAttemptsRef.current = 0; // Reset attempts on successful reconnection
       } catch (error) {
-        console.error(`Failed to reconnect ${type} WebSocket:`, error);
+        console.error('Failed to reconnect unified WebSocket:', error);
         // Schedule another reconnection attempt
-        reconnectWebSocket(type, stream);
+        reconnectWebSocket(systemStream, micStream);
       }
     }, reconnectDelay);
   }, []);
 
-  const setupWebSocketHeartbeat = useCallback((wsRef: React.MutableRefObject<WebSocket | null>, type: 'system' | 'mic') => {
+  const setupWebSocketHeartbeat = useCallback((wsRef: React.MutableRefObject<WebSocket | null>) => {
     if (!wsRef.current) return;
 
     const heartbeatInterval = setInterval(() => {
-      if (!checkWebSocketHealth(wsRef, type)) {
-        console.warn(`${type} WebSocket health check failed, attempting reconnection`);
+      if (!checkWebSocketHealth(wsRef)) {
+        console.warn('Unified WebSocket health check failed, attempting reconnection');
         clearInterval(heartbeatInterval);
         // Note: We don't have access to the stream here, so we'll handle reconnection in the onclose handler
       }
     }, 5000); // Check every 5 seconds
 
     // Store interval reference for cleanup
-    if (type === 'system') {
-      (wsRef.current as any).heartbeatInterval = heartbeatInterval;
-    } else {
-      (wsRef.current as any).heartbeatInterval = heartbeatInterval;
-    }
+    (wsRef.current as any).heartbeatInterval = heartbeatInterval;
   }, [checkWebSocketHealth]);
 
   const cleanupWebSocketHeartbeat = useCallback((wsRef: React.MutableRefObject<WebSocket | null>) => {
@@ -1372,126 +1354,37 @@ export const useTranscription = () => {
     }
   }, []);
 
-  // WebSocket connections
+  // Unified WebSocket connection
   // Using ngrok WebSocket connection instead of Deepgram
-  const startMicTranscription = useCallback(async (stream: MediaStream) => {
+  const startUnifiedTranscription = useCallback(async (systemStream?: MediaStream, micStream?: MediaStream) => {
     try {
       // Check if connection already exists
-      if (micWsRef.current && micWsRef.current.readyState === WebSocket.OPEN) {
-        console.log('⚠️ Microphone WebSocket already connected, skipping new connection');
+      if (unifiedWsRef.current && unifiedWsRef.current.readyState === WebSocket.OPEN) {
+        console.log('⚠️ Unified WebSocket already connected, skipping new connection');
         return;
       }
       
       // Connect to ngrok WebSocket server
-      console.log('🔌 Creating NEW microphone WebSocket connection to ngrok server');
+      console.log('🔌 Creating NEW unified WebSocket connection to ngrok server');
       const ws = new WebSocket('wss://399d80c50137.ngrok-free.app');
-      micWsRef.current = ws;
+      unifiedWsRef.current = ws;
       
       ws.onopen = () => {
-        console.log('Microphone WebSocket connected successfully to ngrok');
-        setMicTranscribing(true);
-        setTranscriptionError('');
-        micWsReconnectAttemptsRef.current = 0; // Reset reconnection attempts
-        
-        // Set up audio processing
-        setupMicAudioProcessing(stream);
-        
-        // Set up heartbeat monitoring
-        setupWebSocketHeartbeat(micWsRef, 'mic');
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('=== RAW WEBSOCKET DATA ===');
-          console.log('Full incoming data:', data);
-          console.log('==========================');
-          
-          // Only process transcript data, ignore log messages
-          if (data && data.data && data.data.data && data.data.data.words) {
-            const words = data.data.data.words;
-            const participant = data.data.data.participant;
-            
-            // Extract text from words array
-            const text = words.map((word: any) => word.text).join(' ');
-            
-            if (text.trim()) {
-              // Use participant name if available, otherwise use "Speaker"
-              const username = participant?.name || 'Speaker';
-              
-              console.log('=== PROCESSING TRANSCRIPT ===');
-              console.log('Extracted text:', text);
-              console.log('Participant data:', participant);
-              console.log('Username:', username);
-              console.log('=============================');
-              
-              addTranscriptionMessage(username, text, true);
-            }
-          } else if (data && data.log) {
-            // This is a log message, ignore it completely
-            console.log('Ignoring log message:', data.log);
-            return;
-          } else {
-            // This is some other type of message, ignore it
-            console.log('Ignoring non-transcript message:', data);
-            return;
-          }
-        } catch (e) {
-          console.log('Raw message from ngrok WebSocket:', event.data);
-          // If it's not JSON, ignore it
-          return;
-        }
-      };
-      
-      ws.onclose = (event) => {
-        console.log('Microphone WebSocket disconnected:', event.code, event.reason);
-        cleanupWebSocketHeartbeat(micWsRef);
-        setMicTranscribing(false);
-        
-        // Only attempt reconnection if call is still active and not a normal closure
-        if (isCallActiveRef.current && event.code !== 1000) {
-          console.log('Call is still active, attempting to reconnect microphone WebSocket');
-          setTranscriptionError('Connection lost, attempting to reconnect...');
-          reconnectWebSocket('mic', stream);
-        } else if (event.code !== 1000) {
-          setTranscriptionError('Connection lost unexpectedly');
-        }
-      };
-      
-      ws.onerror = (error) => {
-        console.error('Microphone WebSocket error:', error);
-        setTranscriptionError('Connection error occurred');
-        setMicTranscribing(false);
-      };
-      
-    } catch (error) {
-      console.error('Error starting transcription:', error);
-      setTranscriptionError('Failed to start transcription');
-    }
-  }, [setupMicAudioProcessing, setupWebSocketHeartbeat, cleanupWebSocketHeartbeat, reconnectWebSocket, addMicMessage]);
-
-  const startSystemTranscription = useCallback(async (stream: MediaStream) => {
-    try {
-      // Check if connection already exists
-      if (systemWsRef.current && systemWsRef.current.readyState === WebSocket.OPEN) {
-        console.log('⚠️ System WebSocket already connected, skipping new connection');
-        return;
-      }
-      
-      // Connect to ngrok WebSocket server for system audio
-      console.log('🔌 Creating NEW system WebSocket connection to ngrok server');
-      const ws = new WebSocket('wss://399d80c50137.ngrok-free.app');
-      systemWsRef.current = ws;
-      
-      ws.onopen = () => {
-        console.log('System WebSocket connected successfully to ngrok');
+        console.log('Unified WebSocket connected successfully to ngrok');
         setSystemTranscribing(true);
+        setMicTranscribing(true);
         setSystemTranscriptionError('');
+        setTranscriptionError('');
         setSystemSpeakers(new Map()); // Reset speakers for new session
-        systemWsReconnectAttemptsRef.current = 0; // Reset reconnection attempts
+        unifiedWsReconnectAttemptsRef.current = 0; // Reset reconnection attempts
         
-        // Set up audio processing for system audio
-        setupSystemAudioProcessing(stream);
+        // Set up audio processing for both streams
+        if (systemStream) {
+          setupSystemAudioProcessing(systemStream);
+        }
+        if (micStream) {
+          setupMicAudioProcessing(micStream);
+        }
         
         // Start burst timer if diarization is disabled
         if (!diarizationEnabled) {
@@ -1499,15 +1392,15 @@ export const useTranscription = () => {
         }
         
         // Set up heartbeat monitoring
-        setupWebSocketHeartbeat(systemWsRef, 'system');
+        setupWebSocketHeartbeat(unifiedWsRef);
       };
       
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('=== RAW WEBSOCKET DATA (SYSTEM) ===');
+          console.log('=== RAW WEBSOCKET DATA (UNIFIED) ===');
           console.log('Full incoming data:', data);
-          console.log('===================================');
+          console.log('====================================');
           
           // Only process transcript data, ignore log messages
           if (data && data.data && data.data.data && data.data.data.words) {
@@ -1521,56 +1414,62 @@ export const useTranscription = () => {
               // Use participant name if available, otherwise use "Speaker"
               const username = participant?.name || 'Speaker';
               
-              console.log('=== PROCESSING TRANSCRIPT (SYSTEM) ===');
+              console.log('=== PROCESSING TRANSCRIPT (UNIFIED) ===');
               console.log('Extracted text:', text);
               console.log('Participant data:', participant);
               console.log('Username:', username);
-              console.log('=====================================');
+              console.log('======================================');
               
               addTranscriptionMessage(username, text, true);
             }
           } else if (data && data.log) {
             // This is a log message, ignore it completely
-            console.log('Ignoring log message (system):', data.log);
+            console.log('Ignoring log message (unified):', data.log);
             return;
           } else {
             // This is some other type of message, ignore it
-            console.log('Ignoring non-transcript message (system):', data);
+            console.log('Ignoring non-transcript message (unified):', data);
             return;
           }
         } catch (e) {
-          console.log('Raw message from ngrok WebSocket (system):', event.data);
+          console.log('Raw message from ngrok WebSocket (unified):', event.data);
           // If it's not JSON, ignore it
           return;
         }
       };
       
       ws.onclose = (event) => {
-        console.log('System WebSocket disconnected:', event.code, event.reason);
-        cleanupWebSocketHeartbeat(systemWsRef);
+        console.log('Unified WebSocket disconnected:', event.code, event.reason);
+        cleanupWebSocketHeartbeat(unifiedWsRef);
         setSystemTranscribing(false);
+        setMicTranscribing(false);
         
         // Only attempt reconnection if call is still active and not a normal closure
         if (isCallActiveRef.current && event.code !== 1000) {
-          console.log('Call is still active, attempting to reconnect system WebSocket');
+          console.log('Call is still active, attempting to reconnect unified WebSocket');
           setSystemTranscriptionError('Connection lost, attempting to reconnect...');
-          reconnectWebSocket('system', stream);
+          setTranscriptionError('Connection lost, attempting to reconnect...');
+          reconnectWebSocket(systemStream, micStream);
         } else if (event.code !== 1000) {
           setSystemTranscriptionError('Connection lost unexpectedly');
+          setTranscriptionError('Connection lost unexpectedly');
         }
       };
       
       ws.onerror = (error) => {
-        console.error('System WebSocket error:', error);
+        console.error('Unified WebSocket error:', error);
         setSystemTranscriptionError('Connection error occurred');
+        setTranscriptionError('Connection error occurred');
         setSystemTranscribing(false);
+        setMicTranscribing(false);
       };
       
     } catch (error) {
-      console.error('Error starting system transcription:', error);
-      setSystemTranscriptionError('Failed to start system transcription');
+      console.error('Error starting unified transcription:', error);
+      setSystemTranscriptionError('Failed to start transcription');
+      setTranscriptionError('Failed to start transcription');
     }
-  }, [diarizationEnabled, setupSystemAudioProcessing, addTranscriptionMessage, startSystemBurstTimer, setupWebSocketHeartbeat, cleanupWebSocketHeartbeat, reconnectWebSocket]);
+  }, [diarizationEnabled, setupSystemAudioProcessing, setupMicAudioProcessing, addTranscriptionMessage, startSystemBurstTimer, setupWebSocketHeartbeat, cleanupWebSocketHeartbeat, reconnectWebSocket]);
 
   // Recording functions
   const startSystemRecording = useCallback(async () => {
@@ -1643,9 +1542,9 @@ export const useTranscription = () => {
       mediaRecorder.start(1000); // Record in 1-second chunks
       console.log('System recording started');
 
-      // Start system audio transcription
+      // Start unified transcription with system stream
       if (stream) {
-        await startSystemTranscription(stream);
+        await startUnifiedTranscription(stream);
       } else {
         throw new Error('Failed to get media stream for system recording');
       }
@@ -1654,7 +1553,7 @@ export const useTranscription = () => {
       console.error('Error starting system recording:', error);
       setSystemTranscriptionError(`Failed to start system recording: ${(error as Error).message}`);
     }
-  }, [screenSources, selectedScreenSource, startSystemTranscription]);
+  }, [screenSources, selectedScreenSource, startUnifiedTranscription]);
 
   const startSystemRecordingWithSource = useCallback(async (source: ScreenSource) => {
     try {
@@ -1722,9 +1621,9 @@ export const useTranscription = () => {
       mediaRecorder.start(1000); // Record in 1-second chunks
       console.log('System recording started with source:', source.id);
 
-      // Start system audio transcription
+      // Start unified transcription with system stream
       if (stream) {
-        await startSystemTranscription(stream);
+        await startUnifiedTranscription(stream);
       } else {
         throw new Error('Failed to get media stream for system recording');
       }
@@ -1733,7 +1632,7 @@ export const useTranscription = () => {
       console.error('Error starting system recording with source:', error);
       setSystemTranscriptionError(`Failed to start system recording: ${(error as Error).message}`);
     }
-  }, [startSystemTranscription]);
+  }, [startUnifiedTranscription]);
 
   const startMicRecording = useCallback(async () => {
     try {
@@ -1767,14 +1666,14 @@ export const useTranscription = () => {
 
       mediaRecorder.start();
 
-      // Start real-time transcription
-      await startMicTranscription(stream);
+      // Start unified transcription with mic stream
+      await startUnifiedTranscription(undefined, stream);
 
     } catch (error) {
       console.error('Error starting microphone recording:', error);
       setTranscriptionError(`Failed to start microphone recording: ${(error as Error).message}`);
     }
-  }, [startMicTranscription]);
+  }, [startUnifiedTranscription]);
 
   const stopSystemRecording = useCallback(() => {
     if (systemMediaRecorderRef.current) {
@@ -1789,32 +1688,32 @@ export const useTranscription = () => {
       }
     }
     
-    // Clean up WebSocket connection properly
-    if (systemWsRef.current) {
-      console.log('🔌 Closing system WebSocket connection to transcription server');
+    // Clean up unified WebSocket connection properly
+    if (unifiedWsRef.current) {
+      console.log('🔌 Closing unified WebSocket connection to transcription server');
       // Clean up heartbeat monitoring first
-      cleanupWebSocketHeartbeat(systemWsRef);
+      cleanupWebSocketHeartbeat(unifiedWsRef);
       
       // Send stop message if connection is still open
-      if (systemWsRef.current.readyState === WebSocket.OPEN) {
-        systemWsRef.current.send(JSON.stringify({
+      if (unifiedWsRef.current.readyState === WebSocket.OPEN) {
+        unifiedWsRef.current.send(JSON.stringify({
           type: 'stop_transcription'
         }));
       }
       
       // Close connection
-      systemWsRef.current.close(1000, 'Call ended normally');
-      systemWsRef.current = null;
+      unifiedWsRef.current.close(1000, 'Call ended normally');
+      unifiedWsRef.current = null;
     }
     
     // Clear reconnection timeout
-    if (systemWsReconnectTimeoutRef.current) {
-      clearTimeout(systemWsReconnectTimeoutRef.current);
-      systemWsReconnectTimeoutRef.current = null;
+    if (unifiedWsReconnectTimeoutRef.current) {
+      clearTimeout(unifiedWsReconnectTimeoutRef.current);
+      unifiedWsReconnectTimeoutRef.current = null;
     }
     
     // Reset reconnection attempts
-    systemWsReconnectAttemptsRef.current = 0;
+    unifiedWsReconnectAttemptsRef.current = 0;
     
     if (systemProcessorRef.current) {
       systemProcessorRef.current.disconnect();
@@ -1843,32 +1742,7 @@ export const useTranscription = () => {
       }
     }
     
-    // Clean up WebSocket connection properly
-    if (micWsRef.current) {
-      console.log('🔌 Closing microphone WebSocket connection to transcription server');
-      // Clean up heartbeat monitoring first
-      cleanupWebSocketHeartbeat(micWsRef);
-      
-      // Send stop message if connection is still open
-      if (micWsRef.current.readyState === WebSocket.OPEN) {
-        micWsRef.current.send(JSON.stringify({
-          type: 'stop_transcription'
-        }));
-      }
-      
-      // Close connection
-      micWsRef.current.close(1000, 'Call ended normally');
-      micWsRef.current = null;
-    }
-    
-    // Clear reconnection timeout
-    if (micWsReconnectTimeoutRef.current) {
-      clearTimeout(micWsReconnectTimeoutRef.current);
-      micWsReconnectTimeoutRef.current = null;
-    }
-    
-    // Reset reconnection attempts
-    micWsReconnectAttemptsRef.current = 0;
+    // Note: Unified WebSocket cleanup is handled in stopSystemRecording
     
     if (micProcessorRef.current) {
       micProcessorRef.current.disconnect();
@@ -1970,7 +1844,7 @@ export const useTranscription = () => {
       setIsRecording(false);
       isCallActiveRef.current = false; // Reset call active state on error
     }
-  }, [startMicRecording, startDiscoAnalysisInterval]);
+  }, [startSystemRecordingWithSource, startMicRecording, startDiscoAnalysisInterval]);
 
   // Send data to post-call actions API
   const sendToPostCallActions = useCallback(async (holisticView: any) => {
@@ -2212,29 +2086,20 @@ export const useTranscription = () => {
         clearInterval(discoAnalysisTimerRef.current);
       }
       
-      // Clear reconnection timeouts
-      if (systemWsReconnectTimeoutRef.current) {
-        clearTimeout(systemWsReconnectTimeoutRef.current);
-      }
-      if (micWsReconnectTimeoutRef.current) {
-        clearTimeout(micWsReconnectTimeoutRef.current);
+      // Clear reconnection timeout
+      if (unifiedWsReconnectTimeoutRef.current) {
+        clearTimeout(unifiedWsReconnectTimeoutRef.current);
       }
       
       // Stop media recorders
       if (systemMediaRecorderRef.current) systemMediaRecorderRef.current.stop();
       if (micMediaRecorderRef.current) micMediaRecorderRef.current.stop();
       
-      // Cleanup WebSocket connections
-      if (systemWsRef.current) {
-        cleanupWebSocketHeartbeat(systemWsRef);
-        if (systemWsRef.current.readyState === WebSocket.OPEN) {
-          systemWsRef.current.close(1000, 'Component unmounting');
-        }
-      }
-      if (micWsRef.current) {
-        cleanupWebSocketHeartbeat(micWsRef);
-        if (micWsRef.current.readyState === WebSocket.OPEN) {
-          micWsRef.current.close(1000, 'Component unmounting');
+      // Cleanup unified WebSocket connection
+      if (unifiedWsRef.current) {
+        cleanupWebSocketHeartbeat(unifiedWsRef);
+        if (unifiedWsRef.current.readyState === WebSocket.OPEN) {
+          unifiedWsRef.current.close(1000, 'Component unmounting');
         }
       }
       
