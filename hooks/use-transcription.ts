@@ -90,6 +90,7 @@ export const useTranscription = () => {
   
   // Database integration state
   const [currentCall, setCurrentCall] = useState<any>(null);
+  const currentCallRef = useRef<any>(null); // Ref to always have current call data
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [lastUploadedAudioPath, setLastUploadedAudioPath] = useState<string | null>(null);
   const [lastRecordingBlob, setLastRecordingBlob] = useState<Blob | null>(null);
@@ -236,6 +237,7 @@ export const useTranscription = () => {
       });
 
       setCurrentCall(newCall);
+      currentCallRef.current = newCall; // Update ref
       setTranscriptEntries([]);
       
       // Start recording and transcription with the selected source
@@ -667,6 +669,7 @@ export const useTranscription = () => {
       
       // Clear state
       setCurrentCall(null);
+      currentCallRef.current = null; // Clear ref
       setTranscriptEntries([]);
       return true;
     } catch (error) {
@@ -848,13 +851,13 @@ export const useTranscription = () => {
       };
       
       // Only include assistantId and threadId if the current call has them
-      if (currentCall?.assistant_id) {
-        requestBody.assistantId = currentCall.assistant_id;
-        console.log('✅ Using assistant ID for DISCO analysis:', currentCall.assistant_id);
+      if (currentCallRef.current?.assistant_id) {
+        requestBody.assistantId = currentCallRef.current.assistant_id;
+        console.log('✅ Using assistant ID for DISCO analysis:', currentCallRef.current.assistant_id);
         
-        if (currentCall?.thread_id) {
-          requestBody.threadId = currentCall.thread_id;
-          console.log('✅ Using thread ID for DISCO analysis:', currentCall.thread_id);
+        if (currentCallRef.current?.thread_id) {
+          requestBody.threadId = currentCallRef.current.thread_id;
+          console.log('✅ Using thread ID for DISCO analysis:', currentCallRef.current.thread_id);
           console.log('🤖 Assistant + Thread powered DISCO analysis enabled');
         } else {
           console.log('🤖 Assistant-powered DISCO analysis enabled (no thread)');
@@ -943,15 +946,15 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingDisco(false);
     }
-  }, [discoData, currentCall]); // Updated dependency array to include currentCall
+  }, [discoData, currentCallRef]); // Updated dependency array to use currentCallRef
 
   // Quick Analysis function for Genie
   const analyzeQuick = useCallback(async (conversation: string) => {
     try {
       console.log('🚀 Starting Quick Analysis...');
       console.log('💬 Conversation for quick analysis:', conversation);
-      console.log('🆔 Current call assistant ID:', currentCall?.assistant_id || 'No assistant ID');
-      console.log('🧵 Current call thread ID:', currentCall?.thread_id || 'No thread ID');
+      console.log('🆔 Current call assistant ID:', currentCallRef.current?.assistant_id || 'No assistant ID');
+      console.log('🧵 Current call thread ID:', currentCallRef.current?.thread_id || 'No thread ID');
       
       setIsAnalyzingQuick(true);
       setQuickAnalysisError('');
@@ -962,13 +965,13 @@ export const useTranscription = () => {
       };
       
       // Only include assistantId and threadId if the current call has them
-      if (currentCall?.assistant_id) {
-        requestBody.assistantId = currentCall.assistant_id;
-        console.log('✅ Using assistant ID for Quick Analysis:', currentCall.assistant_id);
+      if (currentCallRef.current?.assistant_id) {
+        requestBody.assistantId = currentCallRef.current.assistant_id;
+        console.log('✅ Using assistant ID for Quick Analysis:', currentCallRef.current.assistant_id);
         
-        if (currentCall?.thread_id) {
-          requestBody.threadId = currentCall.thread_id;
-          console.log('✅ Using thread ID for Quick Analysis:', currentCall.thread_id);
+        if (currentCallRef.current?.thread_id) {
+          requestBody.threadId = currentCallRef.current.thread_id;
+          console.log('✅ Using thread ID for Quick Analysis:', currentCallRef.current.thread_id);
           console.log('🤖 Assistant + Thread powered Quick Analysis enabled');
         } else {
           console.log('🤖 Assistant-powered Quick Analysis enabled (no thread)');
@@ -1029,15 +1032,15 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingQuick(false);
     }
-  }, [currentCall]);
+  }, [currentCallRef]);
 
   // AI Chat function for Genie
   const sendAiChat = useCallback(async (userQuery: string, onResponse?: (response: string) => void) => {
     try {
       console.log('🤖 Starting AI Chat...');
       console.log('❓ User query:', userQuery);
-      console.log('🆔 Current call assistant ID:', currentCall?.assistant_id || 'No assistant ID');
-      console.log('🧵 Current call thread ID:', currentCall?.thread_id || 'No thread ID');
+      console.log('🆔 Current call assistant ID:', currentCallRef.current?.assistant_id || 'No assistant ID');
+      console.log('🧵 Current call thread ID:', currentCallRef.current?.thread_id || 'No thread ID');
       
       setIsAnalyzingQuick(true);
       setQuickAnalysisError('');
@@ -1048,13 +1051,13 @@ export const useTranscription = () => {
       };
       
       // Only include assistantId and threadId if the current call has them
-      if (currentCall?.assistant_id) {
-        requestBody.assistantId = currentCall.assistant_id;
-        console.log('✅ Using assistant ID for AI Chat:', currentCall.assistant_id);
+      if (currentCallRef.current?.assistant_id) {
+        requestBody.assistantId = currentCallRef.current.assistant_id;
+        console.log('✅ Using assistant ID for AI Chat:', currentCallRef.current.assistant_id);
         
-        if (currentCall?.thread_id) {
-          requestBody.threadId = currentCall.thread_id;
-          console.log('✅ Using thread ID for AI Chat:', currentCall.thread_id);
+        if (currentCallRef.current?.thread_id) {
+          requestBody.threadId = currentCallRef.current.thread_id;
+          console.log('✅ Using thread ID for AI Chat:', currentCallRef.current.thread_id);
           console.log('🤖 Assistant + Thread powered AI Chat enabled');
         } else {
           console.log('🤖 Assistant-powered AI Chat enabled (no thread)');
@@ -1111,7 +1114,37 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingQuick(false);
     }
-  }, [currentCall]);
+  }, [currentCallRef]);
+
+  // Refresh current call data to get latest assistant/thread IDs
+  const refreshCurrentCall = useCallback(async () => {
+    if (!currentCall?.call_id) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('call_id', currentCall.call_id)
+        .single();
+      
+      if (error) {
+        console.error('Error refreshing current call:', error);
+        return;
+      }
+      
+      if (data) {
+        console.log('🔄 Refreshed current call data:', {
+          call_id: data.call_id,
+          assistant_id: data.assistant_id || 'No assistant ID',
+          thread_id: data.thread_id || 'No thread ID'
+        });
+        setCurrentCall(data);
+        currentCallRef.current = data; // Update ref
+      }
+    } catch (error) {
+      console.error('Error refreshing current call:', error);
+    }
+  }, [currentCall?.call_id]);
 
   // Automatic DISCO analysis: first after 20 seconds, then every 10 seconds
   const startDiscoAnalysisInterval = useCallback(() => {
@@ -1122,12 +1155,12 @@ export const useTranscription = () => {
       clearTimeout(discoAnalysisTimerRef.current);
     }
     
-    console.log('🔄 Starting DISCO analysis automation (first after 20s, then every 10s)');
+    console.log('🔄 Starting DISCO and Quick analysis automation (first after 20s, then every 10s)');
     
     // First analysis after 20 seconds
     console.log('⏰ Setting up 20-second timeout for first DISCO analysis');
     const firstAnalysis = setTimeout(() => {
-      console.log('⏰ 20-second timeout fired! Starting first DISCO analysis');
+      console.log('⏰ 20-second timeout fired! Starting first DISCO and Quick analysis');
       
       // Get current messages from state at execution time (not closure)
       const currentMessages = allMessages;
@@ -1157,19 +1190,26 @@ export const useTranscription = () => {
       // Force use live conversation only
       const conversation = liveConversation;
       
-      console.log('⏰ First DISCO analysis triggered (after 20s). Conversation length:', conversation.length);
+      console.log('⏰ First DISCO and Quick analysis triggered (after 20s). Conversation length:', conversation.length);
       console.log('🔍 Using live conversation only (forced)');
       
-      // Send to DISCO analysis if we have content
+      // Send to DISCO analysis and Quick analysis if we have content
       if (conversation.trim().length > 0) {
-        console.log('✅ Triggering first DISCO analysis...');
-        analyzeDisco(conversation);
+        // Refresh current call data to get latest assistant/thread IDs (async)
+        refreshCurrentCall().then(() => {
+          console.log('✅ Triggering first DISCO analysis...');
+          console.log('🆔 Current call assistant ID before analysis:', currentCallRef.current?.assistant_id || 'No assistant ID');
+          console.log('🧵 Current call thread ID before analysis:', currentCallRef.current?.thread_id || 'No thread ID');
+          analyzeDisco(conversation);
+          console.log('✅ Triggering first Quick analysis...');
+          analyzeQuick(conversation);
+        });
       } else {
-        console.log('⏭️ Skipping first DISCO analysis - no conversation content yet');
+        console.log('⏭️ Skipping first DISCO and Quick analysis - no conversation content yet');
       }
       
       // Start the regular 10-second interval after the first analysis
-      console.log('⏰ Setting up 10-second interval for regular DISCO analysis');
+      console.log('⏰ Setting up 10-second interval for regular DISCO and Quick analysis');
       discoAnalysisTimerRef.current = setInterval(() => {
         // Get current messages from ref (always current, no closure issue)
         const currentMessages = allMessagesRef.current;
@@ -1199,15 +1239,22 @@ export const useTranscription = () => {
         // Force use live conversation only
         const conversation = liveConversation;
         
-        console.log('⏰ Regular DISCO analysis triggered (every 10s). Conversation length:', conversation.length);
+        console.log('⏰ Regular DISCO and Quick analysis triggered (every 10s). Conversation length:', conversation.length);
         console.log('🔍 Using live conversation only (forced)');
         
-        // Send to DISCO analysis if we have content
+        // Send to DISCO analysis and Quick analysis if we have content
         if (conversation.trim().length > 0) {
-          console.log('✅ Triggering regular DISCO analysis...');
-          analyzeDisco(conversation);
+          // Refresh current call data to get latest assistant/thread IDs (async)
+          refreshCurrentCall().then(() => {
+            console.log('✅ Triggering regular DISCO analysis...');
+            console.log('🆔 Current call assistant ID before analysis:', currentCallRef.current?.assistant_id || 'No assistant ID');
+            console.log('🧵 Current call thread ID before analysis:', currentCallRef.current?.thread_id || 'No thread ID');
+            analyzeDisco(conversation);
+            console.log('✅ Triggering regular Quick analysis...');
+            analyzeQuick(conversation);
+          });
         } else {
-          console.log('⏭️ Skipping regular DISCO analysis - no conversation content yet');
+          console.log('⏭️ Skipping regular DISCO and Quick analysis - no conversation content yet');
         }
       }, 10000); // Analyze every 10 seconds after the first one
       
@@ -1215,7 +1262,7 @@ export const useTranscription = () => {
     
     // Store the first timeout so we can clear it if needed
     discoAnalysisTimerRef.current = firstAnalysis;
-  }, [allMessages, analyzeDisco]);
+  }, [allMessages, analyzeDisco, analyzeQuick, refreshCurrentCall]);
 
   const stopDiscoAnalysisInterval = useCallback(() => {
     if (discoAnalysisTimerRef.current) {
@@ -1225,6 +1272,7 @@ export const useTranscription = () => {
       discoAnalysisTimerRef.current = null;
     }
   }, []);
+
 
   // Message management
   const addTranscriptionMessage = useCallback((username: string, text: string, isFinal: boolean = true) => {
@@ -2226,5 +2274,6 @@ export const useTranscription = () => {
     startCall,
     stopCall,
     addTranscriptEntry,
+    refreshCurrentCall,
   };
 };
