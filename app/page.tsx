@@ -3488,6 +3488,7 @@ OPERATING RULES
                     {isEditing ? <Save className="h-4 w-4" /> : <Edit className="h-4 w-4" />}
                     {isEditing ? "Save" : "Edit"}
                   </Button>
+                  {/*
                   <Button
                     variant="outline"
                     size="sm"
@@ -3497,6 +3498,7 @@ OPERATING RULES
                     <Users className="h-4 w-4" />
                     Relabel
                   </Button>
+                  */}
                   <Button 
                     variant="outline" 
                     size="sm" 
