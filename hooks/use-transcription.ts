@@ -82,6 +82,7 @@ export const useTranscription = () => {
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const systemBurstTimerRef = useRef<NodeJS.Timeout | null>(null);
   const discoAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const allMessagesRef = useRef<TranscriptionMessage[]>([]);
   
   // Audio recording state
   const [systemAudioChunks, setSystemAudioChunks] = useState<Blob[]>([]);
@@ -1127,10 +1128,13 @@ export const useTranscription = () => {
     console.log('⏰ Setting up 20-second timeout for first DISCO analysis');
     const firstAnalysis = setTimeout(() => {
       console.log('⏰ 20-second timeout fired! Starting first DISCO analysis');
-      console.log('🔍 Total messages count:', allMessages.length);
+      
+      // Get current messages from state at execution time (not closure)
+      const currentMessages = allMessages;
+      console.log('🔍 Total messages count:', currentMessages.length);
       
       // Log each message individually
-      allMessages.forEach((msg, index) => {
+      currentMessages.forEach((msg, index) => {
         console.log(`🔍 Message ${index}:`, {
           id: msg.id,
           username: msg.username,
@@ -1142,15 +1146,19 @@ export const useTranscription = () => {
       });
       
       // Use all messages with text content, not just final ones
-      const messagesWithText = allMessages.filter(msg => msg.text.trim());
+      const messagesWithText = currentMessages.filter(msg => msg.text.trim());
       console.log('🔍 Messages with text content:', messagesWithText);
       console.log('🔍 Messages with text count:', messagesWithText.length);
       
-        const conversation = messagesWithText
-          .map(msg => `${msg.username}: ${msg.text}`)
-          .join('\n');
+      const liveConversation = messagesWithText
+        .map(msg => `${msg.username}: ${msg.text}`)
+        .join('\n');
+      
+      // Force use live conversation only
+      const conversation = liveConversation;
       
       console.log('⏰ First DISCO analysis triggered (after 20s). Conversation length:', conversation.length);
+      console.log('🔍 Using live conversation only (forced)');
       
       // Send to DISCO analysis if we have content
       if (conversation.trim().length > 0) {
@@ -1163,10 +1171,12 @@ export const useTranscription = () => {
       // Start the regular 10-second interval after the first analysis
       console.log('⏰ Setting up 10-second interval for regular DISCO analysis');
       discoAnalysisTimerRef.current = setInterval(() => {
-        console.log('🔍 Total messages count:', allMessages.length);
+        // Get current messages from ref (always current, no closure issue)
+        const currentMessages = allMessagesRef.current;
+        console.log('🔍 Total messages count:', currentMessages.length);
         
         // Log each message individually
-        allMessages.forEach((msg, index) => {
+        currentMessages.forEach((msg, index) => {
           console.log(`🔍 Message ${index}:`, {
             id: msg.id,
             username: msg.username,
@@ -1178,15 +1188,19 @@ export const useTranscription = () => {
         });
         
         // Use all messages with text content, not just final ones
-        const messagesWithText = allMessages.filter(msg => msg.text.trim());
+        const messagesWithText = currentMessages.filter(msg => msg.text.trim());
         console.log('🔍 Messages with text content:', messagesWithText);
         console.log('🔍 Messages with text count:', messagesWithText.length);
         
-        const conversation = messagesWithText
+        const liveConversation = messagesWithText
           .map(msg => `${msg.username}: ${msg.text}`)
           .join('\n');
         
+        // Force use live conversation only
+        const conversation = liveConversation;
+        
         console.log('⏰ Regular DISCO analysis triggered (every 10s). Conversation length:', conversation.length);
+        console.log('🔍 Using live conversation only (forced)');
         
         // Send to DISCO analysis if we have content
         if (conversation.trim().length > 0) {
@@ -1233,7 +1247,11 @@ export const useTranscription = () => {
       isFinal
     };
     
-    setAllMessages(prev => [...prev, message]);
+    setAllMessages(prev => {
+      const newMessages = [...prev, message];
+      allMessagesRef.current = newMessages; // Update ref
+      return newMessages;
+    });
   }, []);
 
   const addMicMessage = useCallback((text: string, isFinal: boolean = true) => {
@@ -1799,6 +1817,7 @@ export const useTranscription = () => {
       // Clear all data for fresh start
       console.log('🧹 Clearing all data for fresh start');
       setAllMessages([]);
+      allMessagesRef.current = []; // Update ref
       setSystemSpeakers(new Map());
       setDiscoData({});
       setDiscoError('');
@@ -1841,6 +1860,7 @@ export const useTranscription = () => {
       // Clear all data for fresh start
       console.log('🧹 Clearing all data for fresh start');
       setAllMessages([]);
+      allMessagesRef.current = []; // Update ref
       setSystemSpeakers(new Map());
       setDiscoData({});
       setDiscoError('');

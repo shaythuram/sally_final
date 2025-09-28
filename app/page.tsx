@@ -68,7 +68,7 @@ const downloadFile = async (url: string, filename?: string): Promise<File> => {
 const createThread = async (assistantId: string) => {
   try {
     const openai = new OpenAI({
-      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'your-api-key-here',
+      apiKey: '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',
       dangerouslyAllowBrowser: true
     });
 
@@ -92,7 +92,7 @@ const createThread = async (assistantId: string) => {
 const createAssistantWithFiles = async (files: File[], assistantName: string, instructions: string) => {
   try {
     const openai = new OpenAI({
-      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'your-api-key-here',
+      apiKey: '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',
       dangerouslyAllowBrowser: true
     });
 
@@ -183,7 +183,7 @@ const createAssistantWithFiles = async (files: File[], assistantName: string, in
 const createAssistantWithFileSearch = async (docUrls: string[], assistantName: string, instructions: string) => {
   try {
     const openai = new OpenAI({
-      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'your-api-key-here',
+      apiKey: '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',
       dangerouslyAllowBrowser: true
     });
 
@@ -5197,3 +5197,6 @@ OPERATING RULES
     </Sidebar>
   )
 }
+
+// Export assistant creation functions
+export { createAssistantWithFiles, createAssistantWithFileSearch }

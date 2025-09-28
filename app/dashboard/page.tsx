@@ -606,7 +606,7 @@ export default function DashboardPage() {
       // Create AI assistant if files were uploaded
       if (uploadedFiles.length > 0) {
         try {
-          const { createAssistantWithFiles } = await import('@/lib/call-management')
+          const { createAssistantWithFiles } = await import('@/app/page')
           
           // Use the original uploaded files directly instead of downloading from URLs
           if (uploadedFiles.length > 0) {
@@ -730,13 +730,7 @@ export default function DashboardPage() {
     if (userInput.trim()) {
       const userMessage = userInput.trim();
       
-      // Add user message to quickAnalysisData instead of genieMessages
-      setQuickAnalysisData(prev => {
-        const newContent = `## Your Question\n\n${userMessage}\n\n`;
-        return prev + newContent;
-      });
-      
-      // Send to AI and get response
+      // Send to AI and get response - sendAiChat will handle adding the question and response
       await sendAiChat(userMessage, (response) => {
         // Response will be added automatically by sendAiChat
       });
@@ -746,10 +740,27 @@ export default function DashboardPage() {
   }
 
   const handleManualDiscoAnalysis = async () => {
-    const conversation = allMessages
+    // Use both allMessages (live) and transcriptEntries (database) for analysis
+    const liveConversation = allMessages
       .filter(msg => msg.text.trim())
       .map(msg => `${msg.username}: ${msg.text}`)
       .join('\n');
+    
+    const dbConversation = transcriptEntries
+      .filter(entry => entry.text.trim())
+      .map(entry => `${entry.speaker}: ${entry.text}`)
+      .join('\n');
+    
+    // Force use live conversation only
+    const conversation = liveConversation;
+    
+    console.log('🔍 DISCO Analysis Sources:');
+    console.log('📱 Live messages count:', allMessages.length);
+    console.log('💾 Database entries count:', transcriptEntries.length);
+    console.log('📝 Live conversation length:', liveConversation.length);
+    console.log('📄 Database conversation length:', dbConversation.length);
+    console.log('🔍 Using live conversation only (forced)');
+    console.log('📱 Sample live messages:', allMessages.slice(0, 3));
     
     if (conversation.trim().length > 0) {
       // Trigger both DISCO analysis and Genie real-time help
