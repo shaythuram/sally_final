@@ -1,6 +1,7 @@
 const express = require('express');
 const WebSocket = require('ws');
 const { createClient } = require('@deepgram/sdk');
+const { createClient: createSupabaseClient } = require('@supabase/supabase-js');
 const cors = require('cors');
 const path = require('path');
 
@@ -20,6 +21,151 @@ const wss = new WebSocket.Server({ server });
 // Deepgram configuration
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || 'ae2854b203e26ead1ddb518d5f29a209b9eceedc';
 const deepgram = createClient(DEEPGRAM_API_KEY);
+
+// Supabase configuration (prefer env, fallback to project constants used on client)
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://fjxfsaookhadepmcuzok.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqeGZzYW9va2hhZGVwbWN1em9rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyNTM1MDgsImV4cCI6MjA3MjgyOTUwOH0.RrUyUkTNhgF13pTL5orFxQvUsOgdq9s9MXLrkxXpFlk';
+
+function getSupabaseForRequest(authHeader) {
+  const token = (authHeader || '').startsWith('Bearer ') ? authHeader.substring('Bearer '.length) : null;
+  const client = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
+  return client;
+}
+
+async function updateCallProgress(supabase, callId, fields) {
+  const { error } = await supabase
+    .from('calls')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('call_id', callId);
+  if (error) {
+    console.error('Supabase update error:', error);
+    throw error;
+  }
+}
+
+// Fire-and-forget background processor
+async function processFinishCallBackground({ payload, authHeader }) {
+  const supabase = getSupabaseForRequest(authHeader);
+  const {
+    callId,
+    transcript = [],
+    discoData = {},
+    genieContent = { live_analysis: [], ai_chat_qna: [] },
+    summary = '',
+    duration = 0,
+    assistantId,
+    threadId
+  } = payload || {};
+
+  try {
+    // Initial DB update (10%)
+    await updateCallProgress(supabase, callId, {
+      transcript: {
+        entries: transcript,
+        permissions: { admin: '', editors: [], viewers: [] },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      disco_data: discoData,
+      genie_content: genieContent,
+      ai_summary: summary || null,
+      duration: duration,
+      status: 'active',
+      post_call_completion: 10
+    });
+
+    // Build conversation text from transcript entries
+    const conversationText = Array.isArray(transcript)
+      ? transcript.map((e) => `${e.speaker}: ${e.text}`).join('\n')
+      : '';
+
+    // Post-call steps
+    try {
+      const postCallBody = {
+        conversation: conversationText,
+        discoAnalysis: discoData,
+        genieSupport: genieContent,
+        ...(assistantId ? { assistantId } : {}),
+        ...(threadId ? { threadId } : {})
+      };
+      const postResp = await fetch('http://localhost:8000/api/post-call-steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(postCallBody)
+      });
+      if (postResp.ok) {
+        const postJson = await postResp.json();
+        await updateCallProgress(supabase, callId, {
+          post_call_actions: postJson,
+          post_call_completion: 60
+        });
+      } else {
+        const errText = await postResp.text();
+        console.error('post-call-steps failed:', postResp.status, errText);
+      }
+    } catch (e) {
+      console.error('post-call-steps exception:', e);
+    }
+
+    // AI summary
+    try {
+      const aiSummaryBody = {
+        conversation: conversationText,
+        discoAnalysis: discoData,
+        genieSupport: genieContent,
+        ...(assistantId ? { assistantId } : {}),
+        ...(threadId ? { threadId } : {})
+      };
+      const aiResp = await fetch('http://localhost:8000/api/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(aiSummaryBody)
+      });
+      if (aiResp.ok) {
+        const aiJson = await aiResp.json();
+        const summaryText = (aiJson && aiJson.summary && aiJson.summary.overview) || aiJson?.response || JSON.stringify(aiJson);
+        await updateCallProgress(supabase, callId, {
+          ai_summary: summaryText,
+          status: 'completed',
+          post_call_completion: 100
+        });
+      } else {
+        const errText = await aiResp.text();
+        console.error('ai-summary failed:', aiResp.status, errText);
+        // Still mark as completed if transcript/disco/genie were saved
+        await updateCallProgress(supabase, callId, { status: 'completed', post_call_completion: 100 });
+      }
+    } catch (e) {
+      console.error('ai-summary exception:', e);
+      await updateCallProgress(supabase, callId, { status: 'completed', post_call_completion: 100 });
+    }
+  } catch (err) {
+    console.error('finish-call processing error:', err);
+  }
+}
+
+// Accept finish-call requests and return immediately
+app.post('/api/finish-call', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'] || '';
+    const payload = req.body || {};
+    if (!payload.callId) {
+      return res.status(400).json({ error: 'callId is required' });
+    }
+
+    // Kick off background processing and return 202 immediately
+    processFinishCallBackground({ payload, authHeader }).catch((e) => console.error('bg error:', e));
+    return res.status(202).json({ accepted: true });
+  } catch (e) {
+    console.error('finish-call handler error:', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Store active connections
 const connections = new Map();

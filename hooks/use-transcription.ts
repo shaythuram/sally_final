@@ -468,140 +468,41 @@ export const useTranscription = () => {
       console.log('  - Live Analysis entries:', splitGenieContent.live_analysis.length);
       console.log('  - AI Chat Q&A pairs:', splitGenieContent.ai_chat_qna.length);
 
-      // Update call with final formatted data
-      console.log('\ud83d\udce4 ===== SENDING DATA TO SUPABASE =====');
-      console.log('\ud83d\udcc4 Transcript data being sent:', JSON.stringify(formattedTranscript, null, 2));
-      console.log('\ud83d\udcc8 DISCO data being sent:', JSON.stringify(formattedDiscoData, null, 2));
-      console.log('\ud83e\uddde Genie data being sent:', JSON.stringify(splitGenieContent, null, 2));
-      console.log('\ud83d\udcdd Summary being sent:', aiSummary);
-      console.log('=============================================');
-      
-      await CallManager.updateCallTranscript(currentCall.call_id, formattedTranscript);
-      await CallManager.updateCallDisco(currentCall.call_id, formattedDiscoData);
-      await CallManager.updateCallGenie(currentCall.call_id, splitGenieContent);
-      await CallManager.updateCallSummary(currentCall.call_id, aiSummary);
-      await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
-      
-      // Fire post-call steps API
+      // Send finish-call payload to server (async), allowing user to navigate away
       try {
-        console.log('\ud83d\ude80 ===== FIRING POST-CALL STEPS API =====');
-        
-        // Prepare conversation transcript
-        const conversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
-        
-        // Prepare request body
-        const postCallRequestBody: any = {
-          conversation: conversationText,
-          discoAnalysis: formattedDiscoData,
-          genieSupport: splitGenieContent
+        console.log('\ud83d\ude80 ===== SENDING FINISH-CALL TO SERVER (ASYNC) =====');
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+
+        const finishPayload = {
+          callId: currentCall.call_id,
+          transcript: formattedTranscript,
+          discoData: formattedDiscoData,
+          genieContent: splitGenieContent,
+          summary: aiSummary,
+          duration: Math.floor(recordingTime / 60),
+          assistantId: currentCall?.assistant_id,
+          threadId: currentCall?.thread_id
         };
-        
-        // Only include assistantId and threadId if they exist
-        if (currentCall?.assistant_id) {
-          postCallRequestBody.assistantId = currentCall.assistant_id;
-          console.log('\u2705 Including assistant ID:', currentCall.assistant_id);
-        }
-        
-        if (currentCall?.thread_id) {
-          postCallRequestBody.threadId = currentCall.thread_id;
-          console.log('\u2705 Including thread ID:', currentCall.thread_id);
-        }
-        
-        console.log('\ud83d\udce4 Post-call request data:', JSON.stringify(postCallRequestBody, null, 2));
-        
-        // Make API call
-        const response = await fetch('http://localhost:8000/api/post-call-steps', {
+
+        console.log('\ud83d\udce4 Finish-call payload preview:', JSON.stringify({ ...finishPayload, transcript: `entries(${formattedTranscript.length})` }, null, 2));
+
+        const resp = await fetch('http://localhost:3001/api/finish-call', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
-          body: JSON.stringify(postCallRequestBody),
+          body: JSON.stringify(finishPayload)
         });
-        
-        console.log('\ud83d\udce1 Post-call API response status:', response.status);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-        }
-        
-        const postCallResult = await response.json();
-        console.log('\ud83d\udce5 Post-call API response:', JSON.stringify(postCallResult, null, 2));
-        
-        // Store the response in post_call_actions column
-        await CallManager.updateCallActions(currentCall.call_id, postCallResult);
-        console.log('\u2705 Post-call actions saved to database');
-        
-      } catch (error) {
-        console.error('\u274c Error in post-call steps API:', error);
-        // Don't fail the call end process if post-call API fails
-      }
-      
-      // Fire AI summary API call
-      try {
-        console.log('\ud83e\udd16 ===== FIRING AI SUMMARY API =====');
-        
-        // Prepare conversation transcript for AI summary
-        const aiSummaryConversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
-        
-        // Use the same request body as post-call steps
-        const aiSummaryRequestBody: any = {
-          conversation: aiSummaryConversationText,
-          discoAnalysis: formattedDiscoData,
-          genieSupport: splitGenieContent
-        };
-        
-        // Only include assistantId and threadId if they exist
-        if (currentCall?.assistant_id) {
-          aiSummaryRequestBody.assistantId = currentCall.assistant_id;
-          console.log('\u2705 Including assistant ID for AI summary:', currentCall.assistant_id);
-        }
-        
-        if (currentCall?.thread_id) {
-          aiSummaryRequestBody.threadId = currentCall.thread_id;
-          console.log('\u2705 Including thread ID for AI summary:', currentCall.thread_id);
-        }
-        
-        console.log('\ud83d\udce4 AI Summary request body:', JSON.stringify(aiSummaryRequestBody, null, 2));
-        
-        // Make API call
-        const aiSummaryResponse = await fetch('http://localhost:8000/api/ai-summary', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(aiSummaryRequestBody),
-        });
-        
-        console.log('\ud83d\udce1 AI Summary API response status:', aiSummaryResponse.status);
-        
-        if (!aiSummaryResponse.ok) {
-          const errorText = await aiSummaryResponse.text();
-          throw new Error(`HTTP error! status: ${aiSummaryResponse.status}, body: ${errorText}`);
-        }
-        
-        const aiSummaryResult = await aiSummaryResponse.json();
-        console.log('📄 AI Summary API response:', JSON.stringify(aiSummaryResult, null, 2));
 
-        // Debug the response structure
-        console.log('🔍 Response keys:', Object.keys(aiSummaryResult || {}));
-        console.log('🔍 Has summary field:', !!aiSummaryResult?.summary);
-        console.log('🔍 Has response field:', !!aiSummaryResult?.response);
-        console.log('🔍 Summary value:', aiSummaryResult?.summary);
-        console.log('🔍 Response value:', aiSummaryResult?.response);
-
-        // Store the AI summary response in ai_summary column (as text)
-        const summaryText = aiSummaryResult.summary.overview || aiSummaryResult.response || JSON.stringify(aiSummaryResult);
-        console.log('📝 Final summary text:', summaryText);
-        console.log('📝 Summary text type:', typeof summaryText);
-        console.log('📝 Summary text length:', summaryText?.length || 0);
-
-        await CallManager.updateCallSummary(currentCall.call_id, summaryText);
-        console.log('\u2705 AI Summary saved to database:', summaryText.substring(0, 100) + '...');
-        
-      } catch (error) {
-        console.error('\u274c Error in AI summary API:', error);
-        // Don't fail the call end process if AI summary API fails
+        console.log('\ud83d\udce1 Finish-call accepted status:', resp.status);
+        if (!resp.ok) {
+          const t = await resp.text().catch(() => '');
+          console.warn('Finish-call not accepted:', resp.status, t);
+        }
+      } catch (e) {
+        console.error('Error sending finish-call to server:', e);
       }
       
       // ===== COMPREHENSIVE CALL END LOGGING =====
