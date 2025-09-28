@@ -24,7 +24,7 @@ Speaker 1: We need to see results within the next 6 months. Our current system i
     console.log('Testing DISCO analysis...');
     console.log('Conversation length:', testConversation.length, 'characters');
     
-    const response = await fetch('http://localhost:8000/api/analyze-disco', {
+    const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

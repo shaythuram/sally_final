@@ -34,7 +34,7 @@ export class UpcomingCallsManager {
   // FUNCTIONS TO BE REPLACED: Generate placeholder unique IDs for bot and meeting
   static async generatePlaceholderId(meetingUrl?: string): Promise<string> {
     try {
-      const response = await axios.post('http://localhost:8000/api/recall-bot', {
+      const response = await axios.post('https://sallydisco-1027340211739.asia-southeast1.run.app/api/recall-bot', {
         meeting_url: meetingUrl || ''
       });
       

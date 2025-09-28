@@ -4,7 +4,7 @@ This document explains how the live transcription data is integrated with your N
 
 ## Overview
 
-The integration automatically sends live transcription data to your Node.js DISCO analysis server at `localhost:8000` and updates the DISCO panels with real-time insights extracted from the conversation.
+The integration automatically sends live transcription data to your Node.js DISCO analysis server at `sallydisco-1027340211739.asia-southeast1.run.app` and updates the DISCO panels with real-time insights extracted from the conversation.
 
 ## How It Works
 
@@ -17,7 +17,7 @@ The integration automatically sends live transcription data to your Node.js DISC
 - When final messages are added, a debounced analysis is triggered
 - Waits 5 seconds after the last message before analyzing
 - Only analyzes if conversation has substantial content (>100 characters)
-- Sends conversation to `http://localhost:8000/api/analyze-disco`
+- Sends conversation to `https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco`
 
 ### 3. Real-time Panel Updates
 - DISCO data is stored in `discoData` state
@@ -29,7 +29,7 @@ The integration automatically sends live transcription data to your Node.js DISC
 
 ### Endpoint Used
 ```
-POST http://localhost:8000/api/analyze-disco
+POST https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco
 ```
 
 ### Request Format
@@ -85,7 +85,7 @@ node test-disco-integration.js
 ```
 
 ### Manual Testing
-1. Start your Node.js DISCO analysis server on `localhost:8000`
+1. Start your Node.js DISCO analysis server on `sallydisco-1027340211739.asia-southeast1.run.app`
 2. Start the transcription server on `localhost:3001`
 3. Start the Sally dashboard on `localhost:3000`
 4. Start recording in the dashboard
@@ -101,7 +101,7 @@ node test-disco-integration.js
 - Only analyzes final messages (not interim)
 
 ### API Settings
-- DISCO Analysis Server: `http://localhost:8000`
+- DISCO Analysis Server: `https://sallydisco-1027340211739.asia-southeast1.run.app`
 - Sally Dashboard: `http://localhost:3000`
 - Transcription Server: `ws://localhost:3001`
 - Endpoint: `/api/analyze-disco`

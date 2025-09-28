@@ -510,7 +510,7 @@ export const useTranscription = () => {
         console.log('\ud83d\udce4 Post-call request data:', JSON.stringify(postCallRequestBody, null, 2));
         
         // Make API call
-        const response = await fetch('http://localhost:8000/api/post-call-steps', {
+        const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/post-call-steps', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -565,7 +565,7 @@ export const useTranscription = () => {
         console.log('\ud83d\udce4 AI Summary request body:', JSON.stringify(aiSummaryRequestBody, null, 2));
         
         // Make API call
-        const aiSummaryResponse = await fetch('http://localhost:8000/api/ai-summary', {
+        const aiSummaryResponse = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/ai-summary', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -863,7 +863,7 @@ export const useTranscription = () => {
       }
       
       console.log('📤 ===== DISCO API REQUEST DEBUG =====');
-      console.log('🎯 URL:', 'http://localhost:8000/api/analyze-disco');
+      console.log('🎯 URL:', 'https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco');
       console.log('📄 Request Body:', JSON.stringify(requestBody, null, 2));
       console.log('🔍 Request Body Size:', JSON.stringify(requestBody).length, 'characters');
       console.log('🔍 Conversation Length:', requestBody.conversation?.length || 0, 'characters');
@@ -871,7 +871,7 @@ export const useTranscription = () => {
       console.log('🔍 Has Thread ID:', !!requestBody.threadId);
       console.log('====================================');
       
-      const response = await fetch('http://localhost:8000/api/analyze-disco', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -977,11 +977,11 @@ export const useTranscription = () => {
       }
       
       console.log('📤 Sending request to Quick Analysis API:', {
-        url: 'http://localhost:8000/api/generate-quick-answer',
+        url: 'https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer',
         body: requestBody
       });
       
-      const response = await fetch('http://localhost:8000/api/generate-quick-answer', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1063,11 +1063,11 @@ export const useTranscription = () => {
       }
       
       console.log('📤 Sending request to AI Chat API:', {
-        url: 'http://localhost:8000/api/generate-quick-answer',
+        url: 'https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer',
         body: requestBody
       });
       
-      const response = await fetch('http://localhost:8000/api/generate-quick-answer', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1886,7 +1886,7 @@ export const useTranscription = () => {
       
       console.log('📤 Post-call actions request:', requestBody);
       
-      const response = await fetch('http://localhost:8000/api/post-call-actions', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/post-call-actions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
