@@ -1209,7 +1209,7 @@ export default function DashboardPage() {
             {/* Left Column - Live Transcription */}
             {isTranscriptionVisible && (
               <div className="lg:col-span-1">
-                <Card className="h-full shadow-sm">
+                <Card className="h-full shadow-sm flex flex-col">
                   <CardHeader className="pb-6">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -1243,11 +1243,11 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-4 flex-1 flex flex-col">
                     {showGenie ? (
                       /* Genie Content */
                       <>
-                        <div className="bg-gray-50 rounded-lg p-3 h-[300px] flex flex-col">
+                        <div className="bg-gray-50 rounded-lg p-3 flex-1 min-h-[300px] flex flex-col">
                           {isAnalyzingQuick ? (
                             <div className="flex-1 flex items-center justify-center">
                               <div className="text-center text-gray-500">
@@ -1408,7 +1408,7 @@ export default function DashboardPage() {
                         )}
 
                         {/* Transcription Messages */}
-                        <div className="bg-gray-50 rounded-lg p-3 h-[300px] flex flex-col overflow-hidden">
+                        <div className="bg-gray-50 rounded-lg p-3 flex-1 min-h-[300px] flex flex-col overflow-hidden">
                           {allMessages.length === 0 ? (
                             <div className="flex items-center justify-center h-full text-gray-500">
                               <div className="text-center">
