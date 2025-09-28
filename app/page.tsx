@@ -2807,6 +2807,24 @@ OPERATING RULES
           </div>
         )}
 
+        {/* Empty state when there are no calls */}
+        {filteredCalls.length === 0 && (
+          <div className="flex items-center justify-center py-24">
+            <div className="text-center">
+              <p className="text-lg font-medium text-gray-700 mb-1">No calls have been created yet!</p>
+              <p className="text-sm text-gray-500 mb-4">Create your first call</p>
+              <Button 
+                onClick={() => setIsCreateCallOpen(true)} 
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={!user}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Call
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Calls Grid - commented out per request */}
         {false && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
