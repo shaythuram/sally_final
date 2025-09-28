@@ -8,7 +8,7 @@ This document outlines the port configuration for the SALLY application.
 |---------|------|-----|-------------|
 | **Sally Dashboard** | 3000 | http://localhost:3000 | Next.js frontend application |
 | **Transcription Server** | 3001 | ws://localhost:3001 | WebSocket server for real-time transcription |
-| **DISCO Analysis Server** | 8000 | http://localhost:8000 | Node.js API for DISCO analysis |
+| **DISCO Analysis Server** | 8000 | https://sallydisco-1027340211739.asia-southeast1.run.app | Node.js API for DISCO analysis |
 
 ## Quick Start
 
@@ -65,7 +65,7 @@ node test-disco-integration.js
 ### Frontend (Sally Dashboard)
 - **File**: `hooks/use-transcription.ts`
 - **WebSocket**: `ws://localhost:3001`
-- **DISCO API**: `http://localhost:8000/api/analyze-disco`
+- **DISCO API**: `https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco`
 
 ### Transcription Server
 - **File**: `server/transcription-server.js`
@@ -74,7 +74,7 @@ node test-disco-integration.js
 
 ### Test Script
 - **File**: `test-disco-integration.js`
-- **DISCO API**: `http://localhost:8000/api/analyze-disco`
+- **DISCO API**: `https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco`
 
 ## Troubleshooting
 

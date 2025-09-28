@@ -9,8 +9,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Only use static export for production builds, not development
-  ...(process.env.NODE_ENV === 'production' && {
+  // Only use static export for Electron builds, not for web deployment
+  ...(process.env.BUILD_FOR_ELECTRON === 'true' && {
     output: 'export',
     trailingSlash: true,
     distDir: 'out',

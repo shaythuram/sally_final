@@ -2023,7 +2023,7 @@ OPERATING RULES
       const threadId = (data as any)?.thread_id
       if (!assistantId || !threadId) { console.warn('Missing assistant/thread id'); return }
       
-      const resp = await fetch('http://localhost:8000/api/ai-complete', {
+      const resp = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/ai-complete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_item: actionText, assistantId, threadId })
       })
@@ -5199,3 +5199,6 @@ OPERATING RULES
     </Sidebar>
   )
 }
+
+// Export assistant creation functions
+export { createAssistantWithFiles, createAssistantWithFileSearch }

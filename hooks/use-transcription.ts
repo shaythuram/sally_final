@@ -82,6 +82,7 @@ export const useTranscription = () => {
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const systemBurstTimerRef = useRef<NodeJS.Timeout | null>(null);
   const discoAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const allMessagesRef = useRef<TranscriptionMessage[]>([]);
   
   // Audio recording state
   const [systemAudioChunks, setSystemAudioChunks] = useState<Blob[]>([]);
@@ -89,6 +90,7 @@ export const useTranscription = () => {
   
   // Database integration state
   const [currentCall, setCurrentCall] = useState<any>(null);
+  const currentCallRef = useRef<any>(null); // Ref to always have current call data
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [lastUploadedAudioPath, setLastUploadedAudioPath] = useState<string | null>(null);
   const [lastRecordingBlob, setLastRecordingBlob] = useState<Blob | null>(null);
@@ -235,6 +237,7 @@ export const useTranscription = () => {
       });
 
       setCurrentCall(newCall);
+      currentCallRef.current = newCall; // Update ref
       setTranscriptEntries([]);
       
       // Start recording and transcription with the selected source
@@ -484,10 +487,10 @@ export const useTranscription = () => {
           assistantId: currentCall?.assistant_id,
           threadId: currentCall?.thread_id
         };
-
         console.log('\ud83d\udce4 Finish-call payload preview:', JSON.stringify({ ...finishPayload, transcript: `entries(${formattedTranscript.length})` }, null, 2));
 
-        const resp = await fetch('http://localhost:3001/api/finish-call', {
+        // Cloud Run endpoint for post-call steps
+        const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/post-call-steps', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -496,11 +499,44 @@ export const useTranscription = () => {
           body: JSON.stringify(finishPayload)
         });
 
-        console.log('\ud83d\udce1 Finish-call accepted status:', resp.status);
-        if (!resp.ok) {
-          const t = await resp.text().catch(() => '');
-          console.warn('Finish-call not accepted:', resp.status, t);
+        console.log('\ud83d\udce1 Post-call API response status:', response.status);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
         }
+        const postCallResult = await response.json();
+        console.log('\ud83d\udce5 Post-call API response:', JSON.stringify(postCallResult, null, 2));
+        await CallManager.updateCallActions(currentCall.call_id, postCallResult);
+        console.log('\u2705 Post-call actions saved to database');
+
+      } catch (error) {
+        console.error('\u274c Error in post-call steps API:', error);
+      }
+
+      // Fire AI summary API call
+      try {
+        console.log('\ud83e\udd16 ===== FIRING AI SUMMARY API =====');
+        const aiSummaryConversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+        const aiSummaryRequestBody: any = {
+          conversation: aiSummaryConversationText,
+          discoAnalysis: formattedDiscoData,
+          genieSupport: splitGenieContent
+        };
+        console.log('\ud83d\udce4 AI Summary request body:', JSON.stringify(aiSummaryRequestBody, null, 2));
+        const aiSummaryResponse = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/ai-summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(aiSummaryRequestBody)
+        });
+        console.log('\ud83d\udce1 AI Summary API response status:', aiSummaryResponse.status);
+        if (!aiSummaryResponse.ok) {
+          const errorText = await aiSummaryResponse.text();
+          throw new Error(`HTTP error! status: ${aiSummaryResponse.status}, body: ${errorText}`);
+        }
+        const aiSummaryResult = await aiSummaryResponse.json();
+        console.log('📄 AI Summary API response:', JSON.stringify(aiSummaryResult, null, 2));
+
+        // Note: keep local logging behavior afterwards
       } catch (e) {
         console.error('Error sending finish-call to server:', e);
       }
@@ -567,6 +603,7 @@ export const useTranscription = () => {
       
       // Clear state
       setCurrentCall(null);
+      currentCallRef.current = null; // Clear ref
       setTranscriptEntries([]);
       return true;
     } catch (error) {
@@ -748,13 +785,13 @@ export const useTranscription = () => {
       };
       
       // Only include assistantId and threadId if the current call has them
-      if (currentCall?.assistant_id) {
-        requestBody.assistantId = currentCall.assistant_id;
-        console.log('✅ Using assistant ID for DISCO analysis:', currentCall.assistant_id);
+      if (currentCallRef.current?.assistant_id) {
+        requestBody.assistantId = currentCallRef.current.assistant_id;
+        console.log('✅ Using assistant ID for DISCO analysis:', currentCallRef.current.assistant_id);
         
-        if (currentCall?.thread_id) {
-          requestBody.threadId = currentCall.thread_id;
-          console.log('✅ Using thread ID for DISCO analysis:', currentCall.thread_id);
+        if (currentCallRef.current?.thread_id) {
+          requestBody.threadId = currentCallRef.current.thread_id;
+          console.log('✅ Using thread ID for DISCO analysis:', currentCallRef.current.thread_id);
           console.log('🤖 Assistant + Thread powered DISCO analysis enabled');
         } else {
           console.log('🤖 Assistant-powered DISCO analysis enabled (no thread)');
@@ -764,7 +801,7 @@ export const useTranscription = () => {
       }
       
       console.log('📤 ===== DISCO API REQUEST DEBUG =====');
-      console.log('🎯 URL:', 'http://localhost:8000/api/analyze-disco');
+      console.log('🎯 URL:', 'https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco');
       console.log('📄 Request Body:', JSON.stringify(requestBody, null, 2));
       console.log('🔍 Request Body Size:', JSON.stringify(requestBody).length, 'characters');
       console.log('🔍 Conversation Length:', requestBody.conversation?.length || 0, 'characters');
@@ -772,7 +809,7 @@ export const useTranscription = () => {
       console.log('🔍 Has Thread ID:', !!requestBody.threadId);
       console.log('====================================');
       
-      const response = await fetch('http://localhost:8000/api/analyze-disco', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/analyze-disco', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -843,15 +880,15 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingDisco(false);
     }
-  }, [discoData, currentCall]); // Updated dependency array to include currentCall
+  }, [discoData, currentCallRef]); // Updated dependency array to use currentCallRef
 
   // Quick Analysis function for Genie
   const analyzeQuick = useCallback(async (conversation: string) => {
     try {
       console.log('🚀 Starting Quick Analysis...');
       console.log('💬 Conversation for quick analysis:', conversation);
-      console.log('🆔 Current call assistant ID:', currentCall?.assistant_id || 'No assistant ID');
-      console.log('🧵 Current call thread ID:', currentCall?.thread_id || 'No thread ID');
+      console.log('🆔 Current call assistant ID:', currentCallRef.current?.assistant_id || 'No assistant ID');
+      console.log('🧵 Current call thread ID:', currentCallRef.current?.thread_id || 'No thread ID');
       
       setIsAnalyzingQuick(true);
       setQuickAnalysisError('');
@@ -862,13 +899,13 @@ export const useTranscription = () => {
       };
       
       // Only include assistantId and threadId if the current call has them
-      if (currentCall?.assistant_id) {
-        requestBody.assistantId = currentCall.assistant_id;
-        console.log('✅ Using assistant ID for Quick Analysis:', currentCall.assistant_id);
+      if (currentCallRef.current?.assistant_id) {
+        requestBody.assistantId = currentCallRef.current.assistant_id;
+        console.log('✅ Using assistant ID for Quick Analysis:', currentCallRef.current.assistant_id);
         
-        if (currentCall?.thread_id) {
-          requestBody.threadId = currentCall.thread_id;
-          console.log('✅ Using thread ID for Quick Analysis:', currentCall.thread_id);
+        if (currentCallRef.current?.thread_id) {
+          requestBody.threadId = currentCallRef.current.thread_id;
+          console.log('✅ Using thread ID for Quick Analysis:', currentCallRef.current.thread_id);
           console.log('🤖 Assistant + Thread powered Quick Analysis enabled');
         } else {
           console.log('🤖 Assistant-powered Quick Analysis enabled (no thread)');
@@ -878,11 +915,11 @@ export const useTranscription = () => {
       }
       
       console.log('📤 Sending request to Quick Analysis API:', {
-        url: 'http://localhost:8000/api/generate-quick-answer',
+        url: 'https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer',
         body: requestBody
       });
       
-      const response = await fetch('http://localhost:8000/api/generate-quick-answer', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -929,15 +966,15 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingQuick(false);
     }
-  }, [currentCall]);
+  }, [currentCallRef]);
 
   // AI Chat function for Genie
   const sendAiChat = useCallback(async (userQuery: string, onResponse?: (response: string) => void) => {
     try {
       console.log('🤖 Starting AI Chat...');
       console.log('❓ User query:', userQuery);
-      console.log('🆔 Current call assistant ID:', currentCall?.assistant_id || 'No assistant ID');
-      console.log('🧵 Current call thread ID:', currentCall?.thread_id || 'No thread ID');
+      console.log('🆔 Current call assistant ID:', currentCallRef.current?.assistant_id || 'No assistant ID');
+      console.log('🧵 Current call thread ID:', currentCallRef.current?.thread_id || 'No thread ID');
       
       setIsAnalyzingQuick(true);
       setQuickAnalysisError('');
@@ -948,13 +985,13 @@ export const useTranscription = () => {
       };
       
       // Only include assistantId and threadId if the current call has them
-      if (currentCall?.assistant_id) {
-        requestBody.assistantId = currentCall.assistant_id;
-        console.log('✅ Using assistant ID for AI Chat:', currentCall.assistant_id);
+      if (currentCallRef.current?.assistant_id) {
+        requestBody.assistantId = currentCallRef.current.assistant_id;
+        console.log('✅ Using assistant ID for AI Chat:', currentCallRef.current.assistant_id);
         
-        if (currentCall?.thread_id) {
-          requestBody.threadId = currentCall.thread_id;
-          console.log('✅ Using thread ID for AI Chat:', currentCall.thread_id);
+        if (currentCallRef.current?.thread_id) {
+          requestBody.threadId = currentCallRef.current.thread_id;
+          console.log('✅ Using thread ID for AI Chat:', currentCallRef.current.thread_id);
           console.log('🤖 Assistant + Thread powered AI Chat enabled');
         } else {
           console.log('🤖 Assistant-powered AI Chat enabled (no thread)');
@@ -964,11 +1001,11 @@ export const useTranscription = () => {
       }
       
       console.log('📤 Sending request to AI Chat API:', {
-        url: 'http://localhost:8000/api/generate-quick-answer',
+        url: 'https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer',
         body: requestBody
       });
       
-      const response = await fetch('http://localhost:8000/api/generate-quick-answer', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/generate-quick-answer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1011,7 +1048,37 @@ export const useTranscription = () => {
     } finally {
       setIsAnalyzingQuick(false);
     }
-  }, [currentCall]);
+  }, [currentCallRef]);
+
+  // Refresh current call data to get latest assistant/thread IDs
+  const refreshCurrentCall = useCallback(async () => {
+    if (!currentCall?.call_id) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('call_id', currentCall.call_id)
+        .single();
+      
+      if (error) {
+        console.error('Error refreshing current call:', error);
+        return;
+      }
+      
+      if (data) {
+        console.log('🔄 Refreshed current call data:', {
+          call_id: data.call_id,
+          assistant_id: data.assistant_id || 'No assistant ID',
+          thread_id: data.thread_id || 'No thread ID'
+        });
+        setCurrentCall(data);
+        currentCallRef.current = data; // Update ref
+      }
+    } catch (error) {
+      console.error('Error refreshing current call:', error);
+    }
+  }, [currentCall?.call_id]);
 
   // Automatic DISCO analysis: first after 20 seconds, then every 10 seconds
   const startDiscoAnalysisInterval = useCallback(() => {
@@ -1022,16 +1089,19 @@ export const useTranscription = () => {
       clearTimeout(discoAnalysisTimerRef.current);
     }
     
-    console.log('🔄 Starting DISCO analysis automation (first after 20s, then every 10s)');
+    console.log('🔄 Starting DISCO and Quick analysis automation (first after 20s, then every 10s)');
     
     // First analysis after 20 seconds
     console.log('⏰ Setting up 20-second timeout for first DISCO analysis');
     const firstAnalysis = setTimeout(() => {
-      console.log('⏰ 20-second timeout fired! Starting first DISCO analysis');
-      console.log('🔍 Total messages count:', allMessages.length);
+      console.log('⏰ 20-second timeout fired! Starting first DISCO and Quick analysis');
+      
+      // Get current messages from state at execution time (not closure)
+      const currentMessages = allMessages;
+      console.log('🔍 Total messages count:', currentMessages.length);
       
       // Log each message individually
-      allMessages.forEach((msg, index) => {
+      currentMessages.forEach((msg, index) => {
         console.log(`🔍 Message ${index}:`, {
           id: msg.id,
           username: msg.username,
@@ -1043,31 +1113,44 @@ export const useTranscription = () => {
       });
       
       // Use all messages with text content, not just final ones
-      const messagesWithText = allMessages.filter(msg => msg.text.trim());
+      const messagesWithText = currentMessages.filter(msg => msg.text.trim());
       console.log('🔍 Messages with text content:', messagesWithText);
       console.log('🔍 Messages with text count:', messagesWithText.length);
       
-        const conversation = messagesWithText
-          .map(msg => `${msg.username}: ${msg.text}`)
-          .join('\n');
+      const liveConversation = messagesWithText
+        .map(msg => `${msg.username}: ${msg.text}`)
+        .join('\n');
       
-      console.log('⏰ First DISCO analysis triggered (after 20s). Conversation length:', conversation.length);
+      // Force use live conversation only
+      const conversation = liveConversation;
       
-      // Send to DISCO analysis if we have content
+      console.log('⏰ First DISCO and Quick analysis triggered (after 20s). Conversation length:', conversation.length);
+      console.log('🔍 Using live conversation only (forced)');
+      
+      // Send to DISCO analysis and Quick analysis if we have content
       if (conversation.trim().length > 0) {
-        console.log('✅ Triggering first DISCO analysis...');
-        analyzeDisco(conversation);
+        // Refresh current call data to get latest assistant/thread IDs (async)
+        refreshCurrentCall().then(() => {
+          console.log('✅ Triggering first DISCO analysis...');
+          console.log('🆔 Current call assistant ID before analysis:', currentCallRef.current?.assistant_id || 'No assistant ID');
+          console.log('🧵 Current call thread ID before analysis:', currentCallRef.current?.thread_id || 'No thread ID');
+          analyzeDisco(conversation);
+          console.log('✅ Triggering first Quick analysis...');
+          analyzeQuick(conversation);
+        });
       } else {
-        console.log('⏭️ Skipping first DISCO analysis - no conversation content yet');
+        console.log('⏭️ Skipping first DISCO and Quick analysis - no conversation content yet');
       }
       
       // Start the regular 10-second interval after the first analysis
-      console.log('⏰ Setting up 10-second interval for regular DISCO analysis');
+      console.log('⏰ Setting up 10-second interval for regular DISCO and Quick analysis');
       discoAnalysisTimerRef.current = setInterval(() => {
-        console.log('🔍 Total messages count:', allMessages.length);
+        // Get current messages from ref (always current, no closure issue)
+        const currentMessages = allMessagesRef.current;
+        console.log('🔍 Total messages count:', currentMessages.length);
         
         // Log each message individually
-        allMessages.forEach((msg, index) => {
+        currentMessages.forEach((msg, index) => {
           console.log(`🔍 Message ${index}:`, {
             id: msg.id,
             username: msg.username,
@@ -1079,22 +1162,33 @@ export const useTranscription = () => {
         });
         
         // Use all messages with text content, not just final ones
-        const messagesWithText = allMessages.filter(msg => msg.text.trim());
+        const messagesWithText = currentMessages.filter(msg => msg.text.trim());
         console.log('🔍 Messages with text content:', messagesWithText);
         console.log('🔍 Messages with text count:', messagesWithText.length);
         
-        const conversation = messagesWithText
+        const liveConversation = messagesWithText
           .map(msg => `${msg.username}: ${msg.text}`)
           .join('\n');
         
-        console.log('⏰ Regular DISCO analysis triggered (every 10s). Conversation length:', conversation.length);
+        // Force use live conversation only
+        const conversation = liveConversation;
         
-        // Send to DISCO analysis if we have content
+        console.log('⏰ Regular DISCO and Quick analysis triggered (every 10s). Conversation length:', conversation.length);
+        console.log('🔍 Using live conversation only (forced)');
+        
+        // Send to DISCO analysis and Quick analysis if we have content
         if (conversation.trim().length > 0) {
-          console.log('✅ Triggering regular DISCO analysis...');
-          analyzeDisco(conversation);
+          // Refresh current call data to get latest assistant/thread IDs (async)
+          refreshCurrentCall().then(() => {
+            console.log('✅ Triggering regular DISCO analysis...');
+            console.log('🆔 Current call assistant ID before analysis:', currentCallRef.current?.assistant_id || 'No assistant ID');
+            console.log('🧵 Current call thread ID before analysis:', currentCallRef.current?.thread_id || 'No thread ID');
+            analyzeDisco(conversation);
+            console.log('✅ Triggering regular Quick analysis...');
+            analyzeQuick(conversation);
+          });
         } else {
-          console.log('⏭️ Skipping regular DISCO analysis - no conversation content yet');
+          console.log('⏭️ Skipping regular DISCO and Quick analysis - no conversation content yet');
         }
       }, 10000); // Analyze every 10 seconds after the first one
       
@@ -1102,7 +1196,7 @@ export const useTranscription = () => {
     
     // Store the first timeout so we can clear it if needed
     discoAnalysisTimerRef.current = firstAnalysis;
-  }, [allMessages, analyzeDisco]);
+  }, [allMessages, analyzeDisco, analyzeQuick, refreshCurrentCall]);
 
   const stopDiscoAnalysisInterval = useCallback(() => {
     if (discoAnalysisTimerRef.current) {
@@ -1112,6 +1206,7 @@ export const useTranscription = () => {
       discoAnalysisTimerRef.current = null;
     }
   }, []);
+
 
   // Message management
   const addTranscriptionMessage = useCallback((username: string, text: string, isFinal: boolean = true) => {
@@ -1134,7 +1229,11 @@ export const useTranscription = () => {
       isFinal
     };
     
-    setAllMessages(prev => [...prev, message]);
+    setAllMessages(prev => {
+      const newMessages = [...prev, message];
+      allMessagesRef.current = newMessages; // Update ref
+      return newMessages;
+    });
   }, []);
 
   const addMicMessage = useCallback((text: string, isFinal: boolean = true) => {
@@ -1700,6 +1799,7 @@ export const useTranscription = () => {
       // Clear all data for fresh start
       console.log('🧹 Clearing all data for fresh start');
       setAllMessages([]);
+      allMessagesRef.current = []; // Update ref
       setSystemSpeakers(new Map());
       setDiscoData({});
       setDiscoError('');
@@ -1742,6 +1842,7 @@ export const useTranscription = () => {
       // Clear all data for fresh start
       console.log('🧹 Clearing all data for fresh start');
       setAllMessages([]);
+      allMessagesRef.current = []; // Update ref
       setSystemSpeakers(new Map());
       setDiscoData({});
       setDiscoError('');
@@ -1787,7 +1888,7 @@ export const useTranscription = () => {
       
       console.log('📤 Post-call actions request:', requestBody);
       
-      const response = await fetch('http://localhost:8000/api/post-call-actions', {
+      const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/post-call-actions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2107,5 +2208,6 @@ export const useTranscription = () => {
     startCall,
     stopCall,
     addTranscriptEntry,
+    refreshCurrentCall,
   };
 };
