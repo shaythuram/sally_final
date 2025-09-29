@@ -498,10 +498,39 @@ export const useTranscription = () => {
         setPostCallProcessingStep('Processing analysis results...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Generate final AI summary using existing data
+        // Generate final AI summary using backend API
         console.log('\ud83e\udd16 ===== GENERATING FINAL AI SUMMARY =====');
         setPostCallProcessingStep('Generating AI summary...');
-        const finalAiSummary = await generateFinalSummary(formattedTranscript, formattedDiscoData, splitGenieContent);
+        let finalAiSummary = '';
+        try {
+          const conversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+          const aiSummaryRequestBody = {
+            conversation: conversationText,
+            discoAnalysis: formattedDiscoData,
+            genieSupport: splitGenieContent,
+            ...(currentCall?.assistant_id ? { assistantId: currentCall.assistant_id } : {}),
+            ...(currentCall?.thread_id ? { threadId: currentCall.thread_id } : {})
+          };
+          
+          console.log('📤 Calling ai-summary API...');
+          const aiSummaryResponse = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/ai-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(aiSummaryRequestBody)
+          });
+          
+          if (aiSummaryResponse.ok) {
+            const aiSummaryResult = await aiSummaryResponse.json();
+            finalAiSummary = aiSummaryResult.summary?.overview || aiSummaryResult.response || JSON.stringify(aiSummaryResult);
+            console.log('✅ AI summary generated from API');
+          } else {
+            console.warn('⚠️ AI summary API failed, using local generation');
+            finalAiSummary = await generateFinalSummary(formattedTranscript, formattedDiscoData, splitGenieContent) || '';
+          }
+        } catch (apiError) {
+          console.warn('⚠️ AI summary API error, using local generation:', apiError);
+          finalAiSummary = await generateFinalSummary(formattedTranscript, formattedDiscoData, splitGenieContent) || '';
+        }
         
         // Save all data to database using CallManager
         console.log('\ud83d\udce4 ===== SAVING POST-CALL DATA TO DATABASE =====');
@@ -528,9 +557,44 @@ export const useTranscription = () => {
           console.log('\u2705 AI summary saved to database');
         }
         
-        // Generate post-call actions based on analysis
+        // Generate post-call actions using backend API
         setPostCallProcessingStep('Generating post-call actions...');
-        const postCallActions = generatePostCallActions(formattedTranscript, formattedDiscoData, splitGenieContent);
+        let postCallActions = {};
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const accessToken = session?.access_token;
+          
+          const conversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+          const postCallRequestBody = {
+            conversation: conversationText,
+            discoAnalysis: formattedDiscoData,
+            genieSupport: splitGenieContent,
+            ...(currentCall?.assistant_id ? { assistantId: currentCall.assistant_id } : {}),
+            ...(currentCall?.thread_id ? { threadId: currentCall.thread_id } : {})
+          };
+          
+          console.log('📤 Calling post-call-steps API...');
+          const postCallResponse = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/post-call-steps', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+            },
+            body: JSON.stringify(postCallRequestBody)
+          });
+          
+          if (postCallResponse.ok) {
+            postCallActions = await postCallResponse.json();
+            console.log('✅ Post-call actions generated from API:', Object.keys(postCallActions).length);
+          } else {
+            console.warn('⚠️ Post-call-steps API failed, using local generation');
+            postCallActions = generatePostCallActions(formattedTranscript, formattedDiscoData, splitGenieContent);
+          }
+        } catch (apiError) {
+          console.warn('⚠️ Post-call-steps API error, using local generation:', apiError);
+          postCallActions = generatePostCallActions(formattedTranscript, formattedDiscoData, splitGenieContent);
+        }
+        
         await CallManager.updateCallActions(currentCall.call_id, postCallActions);
         console.log('\u2705 Post-call actions saved to database');
         
