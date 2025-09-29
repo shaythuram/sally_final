@@ -67,6 +67,10 @@ export const useTranscription = () => {
   const [quickAnalysisData, setQuickAnalysisData] = useState<string>('');
   const [isAnalyzingQuick, setIsAnalyzingQuick] = useState(false);
   const [quickAnalysisError, setQuickAnalysisError] = useState('');
+  
+  // Post-call analysis loading state
+  const [isPostCallProcessing, setIsPostCallProcessing] = useState(false);
+  const [postCallProcessingStep, setPostCallProcessingStep] = useState('');
 
   // Refs
   const systemVideoRef = useRef<HTMLVideoElement>(null);
@@ -475,63 +479,82 @@ export const useTranscription = () => {
       try {
         console.log('\ud83d\ude80 ===== STARTING FRONTEND POST-CALL ANALYSIS =====');
         
+        // Set loading state
+        setIsPostCallProcessing(true);
+        setPostCallProcessingStep('Analyzing conversation...');
+        
         // Run final DISCO analysis with complete conversation
         const completeConversation = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
         console.log('\ud83d\udd0d Running final DISCO analysis with complete conversation...');
+        setPostCallProcessingStep('Running DISCO analysis...');
         await analyzeDisco(completeConversation);
         
         // Run final Quick analysis with complete conversation
         console.log('\ud83d\udd0d Running final Quick analysis with complete conversation...');
+        setPostCallProcessingStep('Running Quick analysis...');
         await analyzeQuick(completeConversation);
         
         // Wait a moment for analysis to complete
+        setPostCallProcessingStep('Processing analysis results...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Generate final AI summary using existing data
         console.log('\ud83e\udd16 ===== GENERATING FINAL AI SUMMARY =====');
+        setPostCallProcessingStep('Generating AI summary...');
         const finalAiSummary = await generateFinalSummary(formattedTranscript, formattedDiscoData, splitGenieContent);
         
         // Save all data to database using CallManager
         console.log('\ud83d\udce4 ===== SAVING POST-CALL DATA TO DATABASE =====');
         
         // Update transcript
+        setPostCallProcessingStep('Saving transcript to database...');
         await CallManager.updateCallTranscript(currentCall.call_id, formattedTranscript);
         console.log('\u2705 Transcript saved to database');
         
         // Update DISCO data
+        setPostCallProcessingStep('Saving DISCO analysis to database...');
         await CallManager.updateCallDisco(currentCall.call_id, formattedDiscoData);
         console.log('\u2705 DISCO data saved to database');
         
         // Update Genie content
+        setPostCallProcessingStep('Saving Genie content to database...');
         await CallManager.updateCallGenie(currentCall.call_id, splitGenieContent);
         console.log('\u2705 Genie content saved to database');
         
         // Update AI summary
         if (finalAiSummary) {
+          setPostCallProcessingStep('Saving AI summary to database...');
           await CallManager.updateCallSummary(currentCall.call_id, finalAiSummary);
           console.log('\u2705 AI summary saved to database');
         }
         
         // Generate post-call actions based on analysis
+        setPostCallProcessingStep('Generating post-call actions...');
         const postCallActions = generatePostCallActions(formattedTranscript, formattedDiscoData, splitGenieContent);
         await CallManager.updateCallActions(currentCall.call_id, postCallActions);
         console.log('\u2705 Post-call actions saved to database');
         
         // Complete the call
+        setPostCallProcessingStep('Completing call...');
         await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
         console.log('\u2705 Call marked as completed');
         
+        setPostCallProcessingStep('Analysis complete!');
         console.log('\ud83d\udc4d ===== FRONTEND POST-CALL ANALYSIS COMPLETED =====');
         
       } catch (error) {
         console.error('\u274c Error in frontend post-call analysis:', error);
+        setPostCallProcessingStep('Error occurred, saving basic data...');
+        
         // Still try to save basic data even if analysis fails
         try {
           await CallManager.updateCallTranscript(currentCall.call_id, formattedTranscript);
           await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
           console.log('\u2705 Basic call data saved despite analysis error');
+          setPostCallProcessingStep('Basic data saved');
         } catch (saveError) {
           console.error('\u274c Error saving basic call data:', saveError);
+          setPostCallProcessingStep('Error saving data');
         }
       }
       
@@ -945,6 +968,12 @@ export const useTranscription = () => {
         'Update project status': 'unfinished'
       };
     }
+  }, []);
+
+  // Clear post-call processing state
+  const clearPostCallProcessing = useCallback(() => {
+    setIsPostCallProcessing(false);
+    setPostCallProcessingStep('');
   }, []);
 
   // Quick Analysis function for Genie
@@ -2243,6 +2272,10 @@ export const useTranscription = () => {
     isAnalyzingQuick,
     quickAnalysisError,
     
+    // Post-call processing state
+    isPostCallProcessing,
+    postCallProcessingStep,
+    
     // Database integration state
     currentCall,
     transcriptEntries,
@@ -2274,5 +2307,6 @@ export const useTranscription = () => {
     stopCall,
     addTranscriptEntry,
     refreshCurrentCall,
+    clearPostCallProcessing,
   };
 };

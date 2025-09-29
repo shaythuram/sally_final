@@ -42,6 +42,7 @@ import { CallManager } from "@/lib/call-management"
 import { supabase } from "@/lib/supabase"
 import { UpcomingCallsManager, UpcomingCall } from "@/lib/upcoming-calls-manager"
 import { DocumentUploadService } from "@/lib/document-upload-service"
+import { PostCallLoadingOverlay } from "@/components/post-call-loading-overlay"
 
 
 // Mock data for the dashboard
@@ -218,6 +219,8 @@ export default function DashboardPage() {
     quickAnalysisData,
     isAnalyzingQuick,
     quickAnalysisError,
+    isPostCallProcessing,
+    postCallProcessingStep,
     setSelectedScreenSource,
     setDiarizationEnabled,
     setQuickAnalysisData,
@@ -235,6 +238,7 @@ export default function DashboardPage() {
     lastUploadedAudioPath,
     lastRecordingBlob,
     getLocalRecordingBlob,
+    clearPostCallProcessing,
   } = useTranscription()
 
   // Get dynamic DISCO panel data
@@ -383,9 +387,9 @@ export default function DashboardPage() {
       console.log('🛑 stopCall returned:', success)
       if (success) {
         console.log('✅ Call stopped and data saved successfully')
-        console.log('🪟 Setting post-call modal to open...')
-        setIsPostCallModalOpen(true)
-        console.log('🪟 Post-call modal state set to true')
+        // Don't show the old modal - the loading overlay will handle the UI
+        // The loading overlay will show the "Go to Recent Calls" button when complete
+        console.log('🪟 Post-call processing started - loading overlay will handle UI')
       } else {
         console.error('❌ Failed to stop call properly - stopCall returned false')
       }
@@ -710,6 +714,38 @@ export default function DashboardPage() {
       window.removeEventListener('resize', update)
     }
   }, [isCreateCallOpen])
+
+  // Prevent navigation during post-call processing
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isPostCallProcessing) {
+        e.preventDefault()
+        e.returnValue = 'Call data is being saved. Please wait before closing the browser window.'
+        return 'Call data is being saved. Please wait before closing the browser window.'
+      }
+    }
+
+    const handlePopState = (e: PopStateEvent) => {
+      if (isPostCallProcessing) {
+        e.preventDefault()
+        // Push the current state back to prevent navigation
+        window.history.pushState(null, '', window.location.href)
+        alert('Please wait for call data to be saved before navigating away.')
+      }
+    }
+
+    if (isPostCallProcessing) {
+      window.addEventListener('beforeunload', handleBeforeUnload)
+      window.addEventListener('popstate', handlePopState)
+      // Push current state to prevent back button
+      window.history.pushState(null, '', window.location.href)
+    }
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [isPostCallProcessing])
 
   const scrollCreateCallDown = () => {
     if (createCallContentRef.current) {
@@ -1631,6 +1667,18 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      
+      {/* Post-Call Loading Overlay */}
+      <PostCallLoadingOverlay
+        isVisible={isPostCallProcessing}
+        currentStep={postCallProcessingStep}
+        isComplete={postCallProcessingStep === 'Analysis complete!'}
+        hasError={postCallProcessingStep.includes('Error')}
+        onGoToRecentCalls={() => {
+          clearPostCallProcessing();
+          router.push('/?view=recent');
+        }}
+      />
     </Sidebar>
   )
 }
