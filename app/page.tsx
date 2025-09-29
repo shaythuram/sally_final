@@ -1219,7 +1219,8 @@ Best regards,`,
   const [labelText, setLabelText] = useState("")
   const [agendaInput, setAgendaInput] = useState("")
   const [labelColor, setLabelColor] = useState("blue")
-  const [calls, setCalls] = useState(callsData)
+  // Start with no calls so the empty state is shown until real data exists
+  const [calls, setCalls] = useState<any[]>([])
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [selectedFilters, setSelectedFilters] = useState<string[]>([])
   // Catalog of labels to ensure filter dropdown includes labels even if the
@@ -2810,7 +2811,8 @@ OPERATING RULES
         {/* Empty state when there are no calls */}
         {filteredCalls.length === 0 && (
           <div className="flex items-center justify-center py-24">
-            <div className="text-center">
+            <div className="text-center flex flex-col items-center justify-center">
+              <img src="/assets/sally-hero.png" alt="Sally" className="mb-6 w-96 lg:w-[32rem] max-w-[90%]" />
               <p className="text-lg font-medium text-gray-700 mb-1">No calls have been created yet!</p>
               <p className="text-sm text-gray-500 mb-4">Create your first call</p>
               <Button 

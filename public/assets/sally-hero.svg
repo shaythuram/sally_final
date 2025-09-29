@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1600" height="1200" viewBox="0 0 1600 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Color tokens -->
+    <linearGradient id="bgGrad" x1="800" y1="0" x2="800" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FAFF"/>
+      <stop offset="1" stop-color="#EEF4FF"/>
+    </linearGradient>
+
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 550) rotate(90) scale(420 420)">
+      <stop offset="0" stop-color="#60A5FA" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#60A5FA" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="30" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Icon stroke style -->
+    <style><![CDATA[
+      .primary { fill: #2563EB; }
+      .primary-light { fill: #60A5FA; }
+      .ink { fill: #1F2937; }
+      .bubble { fill: #FFFFFF; stroke: #D9E6FF; stroke-width: 4; }
+      .panel { fill: #FFFFFF; stroke: #CFE0FF; stroke-width: 6; rx: 22; }
+      .muted { fill: #64748B; }
+      .robot-shadow { fill:#C7DBFF; }
+      .robot-body { fill: #FFFFFF; stroke: #DDE9FF; stroke-width: 6; }
+      .robot-face { fill: #D7E6FF; }
+      .headset { fill: #3B82F6; }
+      .btnText { fill: #0F172A; }
+    ]]></style>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1600" height="1200" fill="url(#bgGrad)"/>
+
+  <!-- Center guide (invisible) -->
+  <g transform="translate(800, 560)">
+    <!-- ambient glow -->
+    <circle cx="0" cy="0" r="420" fill="url(#glow)" opacity="0.9"/>
+
+    <!-- Icon ring -->
+    <!-- Left chat bubbles -->
+    <g transform="translate(-430,-40)" filter="url(#softGlow)">
+      <rect x="-120" y="-70" width="260" height="120" rx="24" class="bubble"/>
+      <rect x="-90" y="80" width="230" height="110" rx="24" class="bubble"/>
+      <!-- lines -->
+      <rect x="-80" y="-35" width="140" height="12" rx="6" class="muted"/>
+      <rect x="-80" y="-10" width="100" height="12" rx="6" class="muted"/>
+      <rect x="-60" y="115" width="130" height="12" rx="6" class="muted"/>
+      <rect x="-60" y="140" width="80" height="12" rx="6" class="muted"/>
+    </g>
+
+    <!-- Right calendar -->
+    <g transform="translate(410,-10)" filter="url(#softGlow)">
+      <rect x="-130" y="-90" width="260" height="210" class="panel"/>
+      <rect x="-80" y="-110" width="60" height="30" rx="8" class="primary"/>
+      <rect x="20" y="-110" width="60" height="30" rx="8" class="primary"/>
+      <!-- dots -->
+      <circle cx="-80" cy="-30" r="10" class="primary-light"/>
+      <circle cx="-30" cy="-30" r="10" class="primary-light"/>
+      <circle cx="20" cy="-30" r="10" class="primary-light"/>
+      <circle cx="70" cy="-30" r="10" class="primary-light"/>
+      <circle cx="-80" cy="20" r="10" class="primary-light"/>
+      <circle cx="-30" cy="20" r="10" class="primary-light"/>
+      <circle cx="20" cy="20" r="10" class="primary-light"/>
+      <!-- sparkline -->
+      <path d="M-60,70 L-20,30 L20,60 L60,10" stroke="#2563EB" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Floating doc (bottom-left) -->
+    <g transform="translate(-340,210)" filter="url(#softGlow)">
+      <rect x="-120" y="-90" width="240" height="180" rx="18" class="panel"/>
+      <path d="M-80,-40 h160" stroke="#93B5FF" stroke-width="10" stroke-linecap="round"/>
+      <path d="M-80,0 h120" stroke="#93B5FF" stroke-width="10" stroke-linecap="round"/>
+      <path d="M-80,40 h90" stroke="#93B5FF" stroke-width="10" stroke-linecap="round"/>
+      <path d="M30,55 q20,30 60,-10" stroke="#2563EB" stroke-width="10" fill="none" stroke-linecap="round"/>
+    </g>
+
+    <!-- Mic icon (top) -->
+    <g transform="translate(0,-300)" filter="url(#softGlow)">
+      <rect x="-42" y="-100" width="84" height="140" rx="42" class="primary-light"/>
+      <rect x="-32" y="-90" width="64" height="120" rx="32" fill="#A7C6FF"/>
+      <path d="M-120 -2 q120 60 240 0" stroke="#90B8FF" stroke-width="14" fill="none" stroke-linecap="round"/>
+      <rect x="-6" y="40" width="12" height="36" rx="6" class="primary"/>
+      <rect x="-40" y="70" width="80" height="14" rx="7" class="primary"/>
+    </g>
+
+    <!-- Robot -->
+    <g id="robot" transform="translate(0,70)">
+      <!-- Shadow -->
+      <ellipse cx="0" cy="270" rx="200" ry="44" class="robot-shadow" opacity="0.55"/>
+
+      <!-- Body -->
+      <g filter="url(#softGlow)">
+        <!-- torso -->
+        <ellipse cx="0" cy="170" rx="180" ry="160" class="robot-body"/>
+        <!-- arms -->
+        <ellipse cx="-150" cy="170" rx="60" ry="80" fill="#E9F2FF"/>
+        <ellipse cx="150" cy="170" rx="60" ry="80" fill="#E9F2FF"/>
+        <!-- head -->
+        <ellipse cx="0" cy="0" rx="210" ry="170" class="robot-body"/>
+        <ellipse cx="0" cy="10" rx="150" ry="105" class="robot-face"/>
+        <!-- face -->
+        <path d="M-60,20 q20,30 60,30 q40,0 60,-30" stroke="#3657A7" stroke-width="12" fill="none" stroke-linecap="round"/>
+        <circle cx="-60" cy="-5" r="10" class="ink"/>
+        <circle cx="60" cy="-5" r="10" class="ink"/>
+      </g>
+
+      <!-- Headset -->
+      <g>
+        <path d="M-180,-10 a190,160 0 0 1 360,0" fill="none" stroke="#3B82F6" stroke-width="28" stroke-linecap="round"/>
+        <circle cx="-160" cy="10" r="42" class="headset"/>
+        <circle cx="160" cy="10" r="42" class="headset"/>
+        <path d="M140,60 q60,40 20,70" stroke="#1D4ED8" stroke-width="20" stroke-linecap="round"/>
+        <circle cx="155" cy="140" r="20" class="headset"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Title -->
+  <g transform="translate(800,1080)" text-anchor="middle">
+    <text x="0" y="0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" font-size="140" font-weight="800" class="primary">
+      Sally
+    </text>
+    <text x="0" y="64" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" font-size="36" fill="#334155" opacity="0.9">
+      Your AI meetings & call assistant
+    </text>
+  </g>
+</svg>
