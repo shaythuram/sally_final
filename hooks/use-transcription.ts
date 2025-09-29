@@ -471,74 +471,68 @@ export const useTranscription = () => {
       console.log('  - Live Analysis entries:', splitGenieContent.live_analysis.length);
       console.log('  - AI Chat Q&A pairs:', splitGenieContent.ai_chat_qna.length);
 
-      // Send finish-call payload to server (async), allowing user to navigate away
+      // ===== FRONTEND POST-CALL ANALYSIS =====
       try {
-        console.log('\ud83d\ude80 ===== SENDING FINISH-CALL TO SERVER (ASYNC) =====');
-        const { data: { session } } = await supabase.auth.getSession();
-        const accessToken = session?.access_token;
-
-        const finishPayload = {
-          callId: currentCall.call_id,
-          transcript: formattedTranscript,
-          discoData: formattedDiscoData,
-          genieContent: splitGenieContent,
-          summary: aiSummary,
-          duration: Math.floor(recordingTime / 60),
-          assistantId: currentCall?.assistant_id,
-          threadId: currentCall?.thread_id
-        };
-        console.log('\ud83d\udce4 Finish-call payload preview:', JSON.stringify({ ...finishPayload, transcript: `entries(${formattedTranscript.length})` }, null, 2));
-
-        // Cloud Run endpoint for post-call steps
-        const response = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/post-call-steps', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-          },
-          body: JSON.stringify(finishPayload)
-        });
-
-        console.log('\ud83d\udce1 Post-call API response status:', response.status);
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+        console.log('\ud83d\ude80 ===== STARTING FRONTEND POST-CALL ANALYSIS =====');
+        
+        // Run final DISCO analysis with complete conversation
+        const completeConversation = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+        console.log('\ud83d\udd0d Running final DISCO analysis with complete conversation...');
+        await analyzeDisco(completeConversation);
+        
+        // Run final Quick analysis with complete conversation
+        console.log('\ud83d\udd0d Running final Quick analysis with complete conversation...');
+        await analyzeQuick(completeConversation);
+        
+        // Wait a moment for analysis to complete
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Generate final AI summary using existing data
+        console.log('\ud83e\udd16 ===== GENERATING FINAL AI SUMMARY =====');
+        const finalAiSummary = await generateFinalSummary(formattedTranscript, formattedDiscoData, splitGenieContent);
+        
+        // Save all data to database using CallManager
+        console.log('\ud83d\udce4 ===== SAVING POST-CALL DATA TO DATABASE =====');
+        
+        // Update transcript
+        await CallManager.updateCallTranscript(currentCall.call_id, formattedTranscript);
+        console.log('\u2705 Transcript saved to database');
+        
+        // Update DISCO data
+        await CallManager.updateCallDisco(currentCall.call_id, formattedDiscoData);
+        console.log('\u2705 DISCO data saved to database');
+        
+        // Update Genie content
+        await CallManager.updateCallGenie(currentCall.call_id, splitGenieContent);
+        console.log('\u2705 Genie content saved to database');
+        
+        // Update AI summary
+        if (finalAiSummary) {
+          await CallManager.updateCallSummary(currentCall.call_id, finalAiSummary);
+          console.log('\u2705 AI summary saved to database');
         }
-        const postCallResult = await response.json();
-        console.log('\ud83d\udce5 Post-call API response:', JSON.stringify(postCallResult, null, 2));
-        await CallManager.updateCallActions(currentCall.call_id, postCallResult);
+        
+        // Generate post-call actions based on analysis
+        const postCallActions = generatePostCallActions(formattedTranscript, formattedDiscoData, splitGenieContent);
+        await CallManager.updateCallActions(currentCall.call_id, postCallActions);
         console.log('\u2705 Post-call actions saved to database');
-
+        
+        // Complete the call
+        await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
+        console.log('\u2705 Call marked as completed');
+        
+        console.log('\ud83d\udc4d ===== FRONTEND POST-CALL ANALYSIS COMPLETED =====');
+        
       } catch (error) {
-        console.error('\u274c Error in post-call steps API:', error);
-      }
-
-      // Fire AI summary API call
-      try {
-        console.log('\ud83e\udd16 ===== FIRING AI SUMMARY API =====');
-        const aiSummaryConversationText = formattedTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
-        const aiSummaryRequestBody: any = {
-          conversation: aiSummaryConversationText,
-          discoAnalysis: formattedDiscoData,
-          genieSupport: splitGenieContent
-        };
-        console.log('\ud83d\udce4 AI Summary request body:', JSON.stringify(aiSummaryRequestBody, null, 2));
-        const aiSummaryResponse = await fetch('https://sallydisco-1027340211739.asia-southeast1.run.app/api/ai-summary', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(aiSummaryRequestBody)
-        });
-        console.log('\ud83d\udce1 AI Summary API response status:', aiSummaryResponse.status);
-        if (!aiSummaryResponse.ok) {
-          const errorText = await aiSummaryResponse.text();
-          throw new Error(`HTTP error! status: ${aiSummaryResponse.status}, body: ${errorText}`);
+        console.error('\u274c Error in frontend post-call analysis:', error);
+        // Still try to save basic data even if analysis fails
+        try {
+          await CallManager.updateCallTranscript(currentCall.call_id, formattedTranscript);
+          await CallManager.completeCall(currentCall.call_id, Math.floor(recordingTime / 60));
+          console.log('\u2705 Basic call data saved despite analysis error');
+        } catch (saveError) {
+          console.error('\u274c Error saving basic call data:', saveError);
         }
-        const aiSummaryResult = await aiSummaryResponse.json();
-        console.log('📄 AI Summary API response:', JSON.stringify(aiSummaryResult, null, 2));
-
-        // Note: keep local logging behavior afterwards
-      } catch (e) {
-        console.error('Error sending finish-call to server:', e);
       }
       
       // ===== COMPREHENSIVE CALL END LOGGING =====
@@ -881,6 +875,77 @@ export const useTranscription = () => {
       setIsAnalyzingDisco(false);
     }
   }, [discoData, currentCallRef]); // Updated dependency array to use currentCallRef
+
+  // Generate final AI summary function
+  const generateFinalSummary = useCallback(async (transcript: any[], discoData: any, genieContent: any) => {
+    try {
+      console.log('📝 Generating final AI summary...');
+      
+      // Create a comprehensive summary from available data
+      const conversationText = transcript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+      
+      // Extract key points from DISCO analysis
+      const discoSummary = Object.keys(discoData).length > 0 ? 
+        `Key Analysis Points:\n${Object.entries(discoData).map(([key, value]) => `- ${key}: ${value}`).join('\n')}` : '';
+      
+      // Extract insights from Genie content
+      const genieSummary = genieContent.live_analysis?.length > 0 ? 
+        `Live Analysis Insights:\n${genieContent.live_analysis.map((item: any) => `- ${item.content}`).join('\n')}` : '';
+      
+      // Create a comprehensive summary
+      const summary = `Meeting Summary:\n\n${conversationText.slice(0, 2000)}${conversationText.length > 2000 ? '...' : ''}\n\n${discoSummary}\n\n${genieSummary}`;
+      
+      console.log('✅ Final AI summary generated');
+      return summary;
+    } catch (error) {
+      console.error('❌ Error generating final summary:', error);
+      return null;
+    }
+  }, []);
+
+  // Generate post-call actions based on analysis
+  const generatePostCallActions = useCallback((transcript: any[], discoData: any, genieContent: any) => {
+    try {
+      console.log('📋 Generating post-call actions...');
+      
+      const actions: Record<string, 'completed' | 'inprogress' | 'unfinished'> = {};
+      
+      // Extract action items from transcript
+      const actionKeywords = ['action item', 'follow up', 'todo', 'task', 'next steps', 'deadline'];
+      const transcriptText = transcript.map(entry => entry.text).join(' ').toLowerCase();
+      
+      actionKeywords.forEach(keyword => {
+        if (transcriptText.includes(keyword)) {
+          actions[`Review ${keyword} mentions`] = 'unfinished';
+        }
+      });
+      
+      // Add standard post-call actions
+      actions['Send meeting summary to attendees'] = 'unfinished';
+      actions['Review action items'] = 'unfinished';
+      actions['Update project status'] = 'unfinished';
+      
+      // If we have DISCO analysis, add related actions
+      if (Object.keys(discoData).length > 0) {
+        actions['Review DISCO analysis insights'] = 'unfinished';
+      }
+      
+      // If we have Genie content, add related actions
+      if (genieContent.live_analysis?.length > 0) {
+        actions['Review live analysis insights'] = 'unfinished';
+      }
+      
+      console.log('✅ Post-call actions generated:', Object.keys(actions).length);
+      return actions;
+    } catch (error) {
+      console.error('❌ Error generating post-call actions:', error);
+      return {
+        'Send meeting summary to attendees': 'unfinished',
+        'Review action items': 'unfinished',
+        'Update project status': 'unfinished'
+      };
+    }
+  }, []);
 
   // Quick Analysis function for Genie
   const analyzeQuick = useCallback(async (conversation: string) => {
