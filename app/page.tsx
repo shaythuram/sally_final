@@ -28,6 +28,7 @@ import {
   Calendar,
   LogOut,
   CalendarDays,
+  Loader2,
 } from "lucide-react"
 import type React from "react"
 
@@ -868,6 +869,11 @@ export default function Dashboard() {
           const all = await (await import("@/lib/call-management")).CallManager.getUserCalls(user.id)
           setCallHistory(all)
         } catch {}
+        finally {
+          setIsCheckingCalls(false)
+        }
+      } else {
+        setIsCheckingCalls(false)
       }
     }
     initializeUser()
@@ -1219,7 +1225,7 @@ Best regards,`,
   const [labelText, setLabelText] = useState("")
   const [agendaInput, setAgendaInput] = useState("")
   const [labelColor, setLabelColor] = useState("blue")
-  // Start with no calls so the empty state is shown until real data exists
+  // Start with no calls; will populate from DB
   const [calls, setCalls] = useState<any[]>([])
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [selectedFilters, setSelectedFilters] = useState<string[]>([])
@@ -1243,6 +1249,7 @@ Best regards,`,
   const [inviteValue, setInviteValue] = useState('')
   const [role, setRole] = useState<'admin' | 'editor' | 'viewer'>('viewer')
   const [isSavingPermission, setIsSavingPermission] = useState(false)
+  const [isCheckingCalls, setIsCheckingCalls] = useState(true)
 
   const openAddMembers = (callId: string) => {
     setTargetCallIdForMembers(callId)
@@ -2808,21 +2815,29 @@ OPERATING RULES
           </div>
         )}
 
-        {/* Empty state when there are no calls */}
-        {filteredCalls.length === 0 && (
+        {/* Empty state when user has no upcoming calls and no owned calls */}
+        {(isCheckingCalls || (upcomingCalls.length === 0 && callHistory.filter(c => c.owner_id === user?.id).length === 0)) && (
           <div className="flex items-center justify-center py-24">
             <div className="text-center flex flex-col items-center justify-center">
-              <img src="/assets/sally-hero.png" alt="Sally" className="mb-6 w-96 lg:w-[32rem] max-w-[90%]" />
-              <p className="text-lg font-medium text-gray-700 mb-1">No calls have been created yet!</p>
-              <p className="text-sm text-gray-500 mb-4">Create your first call</p>
-              <Button 
-                onClick={() => setIsCreateCallOpen(true)} 
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-                disabled={!user}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Call
-              </Button>
+              {isCheckingCalls ? (
+                <div className="flex items-center justify-center h-40">
+                  <Loader2 className="h-10 w-10 text-gray-400 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  <img src="/assets/sally-hero.png" alt="Sally" className="mb-6 w-[28rem] md:w-[36rem] lg:w-[40rem] max-w-[95%]" />
+                  <p className="text-lg font-medium text-gray-700 mb-1">No calls have been created yet!</p>
+                  <p className="text-sm text-gray-500 mb-4">Create your first call</p>
+                  <Button 
+                    onClick={() => setIsCreateCallOpen(true)} 
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={!user}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Call
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         )}
