@@ -1536,7 +1536,7 @@ export const useTranscription = () => {
       
       // Connect to ngrok WebSocket server
       console.log('🔌 Creating NEW unified WebSocket connection to ngrok server');
-      const ws = new WebSocket('wss://1a6d37fce563.ngrok-free.app');
+      const ws = new WebSocket('wss://874607cae3c8.ngrok-free.app');
       unifiedWsRef.current = ws;
       
       ws.onopen = () => {
